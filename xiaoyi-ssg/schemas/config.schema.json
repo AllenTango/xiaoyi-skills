@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Config Schema Template",
+  "type": "object",
+  "required": [
+    "site",
+    "pages",
+    "per_page"
+  ],
+  "properties": {
+    "site": {
+      "type": "object",
+      "required": [
+        "title",
+        "author"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(-[A-Z]{2})?$"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "theme": {
+      "type": "string",
+      "description": "Theme reference (generated pipeline uses tokens, not this directly)"
+    },
+    "output_dir": {
+      "type": "string",
+      "default": "public"
+    },
+    "per_page": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 10
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Enabled content types in nav order"
+    },
+    "nav": {
+      "type": "object",
+      "properties": {
+        "home_title": {
+          "type": "string",
+          "default": "Home"
+        },
+        "external_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "url"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "target": {
+                "type": "string",
+                "enum": [
+                  "_blank",
+                  "_self"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "description": "Per-content-type overrides (generated dynamically based on content-types.json)",
+    "properties": {
+      "layout": {
+        "type": "string",
+        "enum": [
+          "list",
+          "grid",
+          "masonry"
+        ]
+      },
+      "show_excerpt": {
+        "type": "boolean"
+      },
+      "excerpt_length": {
+        "type": "integer",
+        "minimum": 50,
+        "maximum": 500
+      },
+      "show_cover": {
+        "type": "boolean"
+      },
+      "content_file": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaoyi SSG"
+  short_description: "Generate interactive static site pipelines"
+  default_prompt: "Use $xiaoyi-ssg to create an interactive static site generator for this project."

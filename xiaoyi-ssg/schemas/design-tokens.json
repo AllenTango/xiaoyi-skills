@@ -1,0 +1,362 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Design Tokens Schema",
+  "type": "object",
+  "required": [
+    "version",
+    "theme_ref",
+    "theme_manifesto_hash",
+    "tokens",
+    "darkMode",
+    "seed"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version"
+    },
+    "theme_ref": {
+      "type": "string",
+      "description": "Reference source: URL, 'custom', or reference name"
+    },
+    "theme_manifesto_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "SHA256 hash of the source theme manifesto"
+    },
+    "tokens": {
+      "type": "object",
+      "required": [
+        "color",
+        "typography",
+        "layout",
+        "component",
+        "motion"
+      ],
+      "properties": {
+        "color": {
+          "type": "object",
+          "required": [
+            "background",
+            "backgroundDark",
+            "text",
+            "textDark",
+            "accent",
+            "accentHover",
+            "muted",
+            "border",
+            "borderDark",
+            "focus",
+            "error",
+            "success"
+          ],
+          "properties": {
+            "background": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "backgroundDark": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "text": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "textDark": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "accent": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "accentHover": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "muted": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "border": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "borderDark": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "focus": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "error": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "success": {
+              "type": "string",
+              "format": "css-color"
+            }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "required": [
+            "fontDisplay",
+            "fontBody",
+            "fontMono",
+            "scale",
+            "lineLength",
+            "letterSpacing"
+          ],
+          "properties": {
+            "fontDisplay": {
+              "type": "string"
+            },
+            "fontBody": {
+              "type": "string"
+            },
+            "fontMono": {
+              "type": "string"
+            },
+            "scale": {
+              "type": "object",
+              "required": [
+                "h1",
+                "h2",
+                "h3",
+                "body",
+                "small",
+                "micro"
+              ],
+              "properties": {
+                "h1": {
+                  "type": "string",
+                  "pattern": "^clamp\\([^)]+\\)\\s*/\\s*[\\d.]+$"
+                },
+                "h2": {
+                  "type": "string",
+                  "pattern": "^clamp\\([^)]+\\)\\s*/\\s*[\\d.]+$"
+                },
+                "h3": {
+                  "type": "string",
+                  "pattern": "^clamp\\([^)]+\\)\\s*/\\s*[\\d.]+$"
+                },
+                "body": {
+                  "type": "string",
+                  "pattern": "^[\\d.]+(rem|em|px)\\s*/\\s*[\\d.]+$"
+                },
+                "small": {
+                  "type": "string",
+                  "pattern": "^[\\d.]+(rem|em|px)\\s*/\\s*[\\d.]+$"
+                },
+                "micro": {
+                  "type": "string",
+                  "pattern": "^[\\d.]+(rem|em|px)\\s*/\\s*[\\d.]+$"
+                }
+              }
+            },
+            "lineLength": {
+              "type": "string",
+              "pattern": "^[\\d.]+ch$"
+            },
+            "letterSpacing": {
+              "type": "object",
+              "required": [
+                "display",
+                "body",
+                "caps"
+              ],
+              "properties": {
+                "display": {
+                  "type": "string",
+                  "pattern": "^[-]?[\\d.]+em$"
+                },
+                "body": {
+                  "type": "string",
+                  "pattern": "^[-]?[\\d.]+em$"
+                },
+                "caps": {
+                  "type": "string",
+                  "pattern": "^[-]?[\\d.]+em$"
+                }
+              }
+            }
+          }
+        },
+        "layout": {
+          "type": "object",
+          "required": [
+            "containerMax",
+            "headerHeight",
+            "footerHeight",
+            "sidebarWidth",
+            "gridColumns",
+            "gutter",
+            "rhythm",
+            "radius"
+          ],
+          "properties": {
+            "containerMax": {
+              "type": "string",
+              "pattern": "^[\\d.]+(ch|rem|px|%)$"
+            },
+            "headerHeight": {
+              "type": "string",
+              "pattern": "^(auto|[\\d.]+(rem|px))$"
+            },
+            "footerHeight": {
+              "type": "string",
+              "pattern": "^(auto|[\\d.]+(rem|px))$"
+            },
+            "sidebarWidth": {
+              "type": "string",
+              "pattern": "^(none|[\\d.]+(rem|px|%))$"
+            },
+            "gridColumns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "gutter": {
+              "type": "string",
+              "pattern": "^[\\d.]+(rem|px)$"
+            },
+            "rhythm": {
+              "type": "string",
+              "pattern": "^[\\d.]+(rem|px)$"
+            },
+            "radius": {
+              "type": "string",
+              "pattern": "^[\\d.]+(rem|px)$"
+            }
+          }
+        },
+        "component": {
+          "type": "object",
+          "required": [
+            "card",
+            "cardMedia",
+            "nav",
+            "button",
+            "form",
+            "blockquote",
+            "code",
+            "pre",
+            "media",
+            "pagination",
+            "breadcrumb"
+          ],
+          "properties": {
+            "card": {
+              "type": "string"
+            },
+            "cardMedia": {
+              "type": "string"
+            },
+            "nav": {
+              "type": "string"
+            },
+            "button": {
+              "type": "string"
+            },
+            "form": {
+              "type": "string"
+            },
+            "blockquote": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "pre": {
+              "type": "string"
+            },
+            "media": {
+              "type": "string"
+            },
+            "pagination": {
+              "type": "string"
+            },
+            "breadcrumb": {
+              "type": "string"
+            }
+          }
+        },
+        "motion": {
+          "type": "object",
+          "required": [
+            "entrance",
+            "hover",
+            "focus",
+            "transitionFast",
+            "transitionBase"
+          ],
+          "properties": {
+            "entrance": {
+              "type": "string"
+            },
+            "hover": {
+              "type": "string"
+            },
+            "focus": {
+              "type": "string"
+            },
+            "transitionFast": {
+              "type": "string",
+              "pattern": "^[\\d.]+ms\\s+[a-z-]+$"
+            },
+            "transitionBase": {
+              "type": "string",
+              "pattern": "^[\\d.]+ms\\s+[a-z-\\(\\)\\d.,]+$"
+            }
+          }
+        }
+      }
+    },
+    "darkMode": {
+      "type": "object",
+      "required": [
+        "color"
+      ],
+      "properties": {
+        "color": {
+          "type": "object",
+          "required": [
+            "background",
+            "text",
+            "border",
+            "muted"
+          ],
+          "properties": {
+            "background": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "text": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "border": {
+              "type": "string",
+              "format": "css-color"
+            },
+            "muted": {
+              "type": "string",
+              "format": "css-color"
+            }
+          }
+        }
+      }
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Deterministic seed for reproducible generation"
+    }
+  }
+}
