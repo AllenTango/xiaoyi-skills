@@ -2,6 +2,8 @@
 
 [![skills.sh](https://skills.sh/b/AllenTango/xiaoyi-skills)](https://skills.sh/AllenTango/xiaoyi-skills)
 
+![xiaoyi-ssg visual identity](assets/xiaoyi-ssg-identity.png)
+
 AI-driven static site generator that creates a **custom rendering pipeline for each project** through conversation. No fixed templates — the AI generates a complete, self-contained SSG (`render.js` + `dev.js` + templates + CSS + browser JS) tailored to your content model, design intent, and necessary interactions.
 
 > **Static-host compatible, interaction-capable.** The AI *is* the generator. Design tokens persist for consistent output across rebuilds. Live-reload dev server and project-specific browser interactions are included when needed.
