@@ -223,7 +223,7 @@ function parseContentFile(filePath, typeKey, typeDef) {
     categories: fm.categories || [],
     cover: fm.cover || '',
     excerpt: fm.excerpt || autoExcerpt(bodyHtml),
-    url: `/${typeKey}/${slug}/`,
+    url: joinPath(typeKey, slug),
     bodyHtml,
     draft: fm.draft || false,
     customFields: Object.fromEntries(
@@ -242,6 +242,30 @@ function autoExcerpt(html, length = 200) {
   const text = html.replace(/<[^>]+>/g, '');
   return text.slice(0, length) + (text.length > length ? '...' : '');
 }
+
+function normalizePath(path) {
+  if (!path || path === '/') return '/';
+  const cleaned = String(path).replace(/^\/+|\/+$/g, '');
+  return cleaned ? `/${cleaned}/` : '/';
+}
+
+function joinPath(...parts) {
+  const cleaned = parts
+    .filter(part => part !== undefined && part !== null && String(part).trim() !== '')
+    .map(part => String(part).replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .join('/');
+  return cleaned ? `/${cleaned}/` : '/';
+}
+
+function outputPathFor(urlPath) {
+  const normalized = normalizePath(urlPath);
+  return normalized === '/' ? 'public/index.html' : `public${normalized}index.html`;
+}
+
+function breadcrumbItem(title, url) {
+  return { title, url: normalizePath(url) };
+}
 ```
 
 ### 全局数据计算
@@ -252,9 +276,9 @@ function buildNav(config, contentTypes) {
   for (const page of config.pages || []) {
     if (page in (contentTypes.types || {})) {
       const typeDef = contentTypes.types[page];
-      navItems.push({ title: typeDef.label || page, url: `/${page}/`, active: false, children: [] });
+      navItems.push({ title: typeDef.label || page, url: joinPath(page), active: false, children: [] });
     } else {
-      navItems.push({ title: page.charAt(0).toUpperCase() + page.slice(1), url: `/${page}/`, active: false, children: [] });
+      navItems.push({ title: page.charAt(0).toUpperCase() + page.slice(1), url: joinPath(page), active: false, children: [] });
     }
   }
   return navItems;
@@ -267,7 +291,7 @@ function buildPagination(allItems, config, contentTypes) {
     const typeDef = (contentTypes.types || {})[typeKey] || {};
     const perPage = typeDef.per_page || defaultPerPage;
     const totalPages = Math.max(1, Math.ceil(items.length / perPage));
-    plans[typeKey] = { items, perPage, totalPages, baseUrl: `/${typeKey}/` };
+    plans[typeKey] = { items, perPage, totalPages, baseUrl: joinPath(typeKey) };
   }
   return plans;
 }
@@ -353,16 +377,17 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
       const start = (pageNum - 1) * plan.perPage;
       const pageItems = plan.items.slice(start, start + plan.perPage);
       const pagination = buildPaginationData(pageNum, plan.totalPages, plan.baseUrl);
+      const pageUrl = pageNum > 1 ? joinPath(plan.baseUrl, 'page', pageNum) : plan.baseUrl;
       const breadcrumb = [
-        { title: config.site.title, url: '/' },
-        { title: typeDef.label, url: plan.baseUrl }
+        breadcrumbItem(config.site.title, '/'),
+        breadcrumbItem(typeDef.label, plan.baseUrl)
       ];
       const data = {
         site: config.site, nav, page: { type: 'list', title: typeDef.label,
-          url: pageNum > 1 ? `${plan.baseUrl}page/${pageNum}/` : plan.baseUrl, breadcrumb },
+          url: pageUrl, breadcrumb },
         pagination, items: pageItems.map(itemSummary), tokens, build_time: buildTime
       };
-      const outputPath = pageNum > 1 ? `public${plan.baseUrl}page/${pageNum}/index.html` : `public${plan.baseUrl}index.html`;
+      const outputPath = outputPathFor(pageUrl);
       const contentFile = join(SITE_ROOT, typeDef.dir);
       writeOutput(outputPath, renderTemplate(templates[`list-${typeKey}`], data), fresh, cache, contentFile, [`list-${typeKey}`, 'base'], interactions);
       outputs.push(outputPath);
@@ -374,15 +399,15 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
     for (const item of items) {
       const pn = prevNextMap[`${typeKey}/${item.slug}`] || {};
       const breadcrumb = [
-        { title: config.site.title, url: '/' },
-        { title: contentTypes.types[typeKey].label, url: `/${typeKey}/` },
-        { title: item.title, url: item.url }
+        breadcrumbItem(config.site.title, '/'),
+        breadcrumbItem(contentTypes.types[typeKey].label, joinPath(typeKey)),
+        breadcrumbItem(item.title, item.url)
       ];
       const data = {
         site: config.site, nav, page: { type: 'detail', title: item.title, url: item.url, breadcrumb },
         item, prev_item: pn.prev, next_item: pn.next, tokens, build_time: buildTime
       };
-      const outputPath = `public${item.url}index.html`;
+      const outputPath = outputPathFor(item.url);
       writeOutput(outputPath, renderTemplate(templates[`detail-${typeKey}`], data), fresh, cache, join(SITE_ROOT, contentTypes.types[typeKey].dir), [`detail-${typeKey}`, 'base'], interactions);
       outputs.push(outputPath);
     }
@@ -395,11 +420,12 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
   }
   const indexData = {
     site: config.site, nav, page: { type: 'index', title: config.site.title, url: '/',
-      breadcrumb: [{ title: config.site.title, url: '/' }] },
+      breadcrumb: [breadcrumbItem(config.site.title, '/')] },
     latest_by_type: latestByType, tokens, build_time: buildTime
   };
-  writeOutput('public/index.html', renderTemplate(templates.index, indexData), fresh, cache, SITE_ROOT, ['index', 'base'], interactions);
-  outputs.push('public/index.html');
+  const indexOutputPath = outputPathFor('/');
+  writeOutput(indexOutputPath, renderTemplate(templates.index, indexData), fresh, cache, SITE_ROOT, ['index', 'base'], interactions);
+  outputs.push(indexOutputPath);
 
   return outputs;
 }
@@ -444,7 +470,7 @@ function generateSitemap(outputs, config) {
 function generate404(config, tokens, templates, nav) {
   const data = {
     site: config.site, nav, page: { type: 'page', title: '404 - Page Not Found', url: '/404/',
-      breadcrumb: [{ title: config.site.title, url: '/' }, { title: '404', url: '/404/' }] },
+      breadcrumb: [breadcrumbItem(config.site.title, '/'), breadcrumbItem('404', '/404/')] },
     item: { title: 'Page Not Found', bodyHtml: "<p>The page you're looking for doesn't exist.</p>" },
     tokens, build_time: new Date().toISOString()
   };
@@ -499,7 +525,8 @@ build(fresh).catch(err => { console.error(err); process.exit(1); });
  */
 import { createServer } from 'http';
 import { readFileSync, existsSync, statSync } from 'fs';
-import { join, extname, relative } from 'path';
+import { join, dirname, extname, relative } from 'path';
+import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import chokidar from 'chokidar';
 
@@ -636,7 +663,8 @@ watcher.on('all', (event, path) => {
  */
 import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
-import { join, extname } from 'path';
+import { join, dirname, extname } from 'path';
+import { fileURLToPath } from 'url';
 
 const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
 const SITE_ROOT = dirname(PIPELINE_DIR);

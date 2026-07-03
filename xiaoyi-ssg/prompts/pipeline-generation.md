@@ -146,6 +146,14 @@
 - 若单一内容类型：重定向或直接渲染列表
 - 若多类型：聚合展示（各类型最新 N 条 + 入口链接）
 
+**Breadcrumb / URL safety**
+- URL path data and visual separators must be separate.
+- Breadcrumb item `url` values must be normalized internal paths such as `/`, `/blog/`, `/blog/post-title/`; never store `//`.
+- Generate the visual breadcrumb separator in exactly one place. Prefer CSS `.breadcrumb li + li::before { content: "/"; }`.
+- Do not render literal `/`, `//`, or separator text inside breadcrumb item data or template loops when CSS already provides separators.
+- Do not emit separators before the first item or after the last item.
+- Filter out empty breadcrumb items before rendering.
+
 ### 6. CSS 变量映射（内联到模板/CSS）
 
 ```css
