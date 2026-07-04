@@ -1,4 +1,4 @@
 interface:
   display_name: "Xiaoyi SSG"
-  short_description: "Generate interactive static site pipelines"
-  default_prompt: "Use $xiaoyi-ssg to create an interactive static site generator for this project."
+  short_description: "Generate language-aware interactive static sites"
+  default_prompt: "Use $xiaoyi-ssg to create a language-aware interactive static site for this project."
