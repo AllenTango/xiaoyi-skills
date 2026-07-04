@@ -10,6 +10,9 @@ Use this skill as a lightweight router for a generated static site pipeline. Kee
 ## First Rules
 
 - Reply in the user's language unless they ask otherwise.
+- For init/new site generation, infer the site's primary language from the user's request language unless the user explicitly specifies another site language.
+- The inferred site language must drive `config.site.language`, HTML `<html lang>`, navigation labels, UI copy, starter Markdown content, metadata, fallback/error text, search/filter labels, pagination labels, comments text, and README snippets generated for that site.
+- Do not default generated sites to English merely because examples, package names, code comments, or references are English. Keep code identifiers in ASCII when useful, but user-facing site text follows the inferred site language.
 - Treat `<SITE_ROOT>` as the directory containing `config.yml`.
 - Treat `<PIPELINE_DIR>` as `<SITE_ROOT>/.xiaoyi-ssg/`.
 - Locate an existing site by walking up from the current directory to find `config.yml`.

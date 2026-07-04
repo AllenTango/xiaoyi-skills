@@ -9,6 +9,11 @@
   "tokens": { ... },           // 完整 design-tokens.json 的 tokens 对象
   "content_types": { ... },    // content-types.json 完整内容
   "config": { ... },           // config.yml 解析后的对象
+  "site_language": {           // inferred from the user's request unless explicitly overridden
+    "code": "zh-CN",
+    "source": "user-request|explicit-user-choice",
+    "ui_language": "Chinese (Simplified)"
+  },
   "components_needed": [       // 基于 content-types 推导的组件清单
     "base-layout",
     "header",
@@ -61,6 +66,15 @@
 ├── interactions.manifest.json // 交互契约、依赖、fallback、验证点
 └── pipeline-manifest.json    // 元数据
 ```
+
+## Language Inheritance
+
+- On init/new site, infer the primary site language from the user's request language unless the user explicitly asks for another language.
+- Write `config.site.language` as a valid BCP 47 language tag matching that inferred language, for example `zh-CN`, `en`, `ja`, or `fr`.
+- All user-facing generated text must use the inferred site language: site title/subtitle when AI-created, nav labels, content type labels, starter Markdown, page headings, buttons, placeholders, empty states, pagination labels, search/filter labels, theme labels, comments text, 404 text, RSS/feed titles, README snippets, and accessibility labels.
+- Keep route slugs, code identifiers, filenames, JSON keys, package names, and internal function names ASCII when appropriate. Do not let ASCII identifiers force English UI copy.
+- If a reference site uses another language, treat it as visual/content inspiration only; do not switch the generated site's primary language unless the user asked for that.
+- If the user mixes languages, prefer the language used for the actual site request. Ask only when the primary site language is ambiguous and materially affects generated content.
 
 ## 生成策略
 

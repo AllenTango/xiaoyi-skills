@@ -14,6 +14,16 @@
 - 两个独立文件：`render.js`（构建）、`dev.js`（开发）
 - 允许生成 `assets/script.js`、`assets/interactions/*.js`、`assets/data/*.json` 来实现静态托管兼容的浏览器交互；交互不得依赖 dev server 才能工作
 
+## Site Language Contract
+
+- The generated renderer must treat `config.site.language` as the authoritative BCP 47 language tag for the site.
+- The init/new-site workflow must set `config.site.language` from the user's request language unless the user explicitly specifies another language.
+- Templates must use `<html lang="<%= it.site.language || inferredFallback %>">`; the fallback must be the inferred site language from generation time, not a hard-coded English default.
+- All user-facing strings produced by templates, generated JavaScript, generated feeds, 404 pages, pagination, search/filter UI, comments UI, aria labels, placeholders, and empty states must be localized to the site language.
+- Internal identifiers may remain ASCII/English, but visible text such as "Home", "Search", "Tags", "Comments", "Loading", "No results", "Previous", "Next", and "Page Not Found" must be translated when the site language is not English.
+- Generated search indexes may include any content language, but UI labels and result status messages must match `config.site.language`.
+- When rendering existing user-authored Markdown, preserve the original content language; do not translate user content unless explicitly requested.
+
 ---
 
 ## render.js — 核心渲染脚本

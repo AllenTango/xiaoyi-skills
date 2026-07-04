@@ -69,7 +69,8 @@ cd my-site
 # AI fetches reference, analyzes design intent
 # AI: "What content types? e.g., projects, articles, about page"
 # You: "Projects (cover, tech stack, repo/live links), articles (title, date, tags), about page"
-# AI generates: config.yml, content-types.json, design-tokens.json, .xiaoyi-ssg/ (render.js, dev.js, templates, CSS, JS)
+# AI generates using your request language unless you specify another site language:
+# config.yml, content-types.json, design-tokens.json, .xiaoyi-ssg/ (render.js, dev.js, templates, CSS, JS)
 # AI auto npm install + first build
 # AI: "Done. Run 'cd .xiaoyi-ssg && npm run dev' to start dev server"
 
@@ -195,7 +196,7 @@ site:
   subtitle: "Designer & Developer"
   author: "Jane Doe"
   email: "jane@example.com"
-  language: "en"
+  language: "en"          # Inferred from the user's request language unless explicitly specified.
   timezone: "UTC"
   url: "https://jane.dev"
   description: "Portfolio of selected work"
