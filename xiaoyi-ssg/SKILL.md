@@ -49,7 +49,6 @@ Generated sites should follow this layout:
 │   ├── node_modules/
 │   ├── render.js
 │   ├── dev.js
-│   ├── preview.js
 │   ├── templates/
 │   ├── assets/
 │   │   ├── style.css
@@ -74,12 +73,12 @@ Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `publ
 - **content edit**: edit only the confirmed content file.
 - **build**: run from `<SITE_ROOT>` with `node .xiaoyi-ssg/render.js`, or from `<PIPELINE_DIR>` with `npm run build`.
 - **dev**: run from `<SITE_ROOT>` with `node .xiaoyi-ssg/dev.js`, or from `<PIPELINE_DIR>` with `npm run dev`.
-- **preview**: run from `<SITE_ROOT>` with `node .xiaoyi-ssg/preview.js`, or from `<PIPELINE_DIR>` with `npm run preview`.
+- **preview**: use `node .xiaoyi-ssg/dev.js` (includes live reload) or open `public/index.html` directly.
 - **diagnose**: inspect config, tokens, content types, source frontmatter, pipeline files, and build output. Do not modify files unless the user asks for fixes.
 
 ## Pipeline Rules
 
-- `render.js`, `dev.js`, and `preview.js` must derive paths from `import.meta.url`:
+- `render.js` and `dev.js` must derive paths from `import.meta.url`:
 
 ```js
 const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));

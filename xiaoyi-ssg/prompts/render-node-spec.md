@@ -1,4 +1,4 @@
-# render.js / dev.js / preview.js 规格文档
+# render.js / dev.js 规格文档
 
 此文档定义 AI 生成渲染管线时应产出的 Node.js 脚本完整规格。AI 按此规格生成代码，写入用户项目的 `.xiaoyi-ssg/`。
 
@@ -8,10 +8,10 @@
 
 - **Node.js 18+**（LTS，内置 `fetch`、`fs.cpSync`）
 - **ESM 模块系统**（`"type": "module"`，使用 `import`/`export`）
-- **路径推导**：`render.js`、`dev.js`、`preview.js` 必须从 `import.meta.url` 推导 `PIPELINE_DIR`，再用 `dirname(PIPELINE_DIR)` 推导 `SITE_ROOT`。不要用 `process.cwd()` 作为站点根；这样脚本既可通过 `cd .xiaoyi-ssg && npm run build/dev/preview` 运行，也可从站点根用 `node .xiaoyi-ssg/*.js` 运行。
-- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown → HTML）、`chokidar`（文件监听，仅 dev.js）
-- 模板引擎：必须支持 HTML 转义、raw HTML、条件、数组循环、属性安全输出和 `data-*` 交互钩子；可自实现，复杂站点可引入轻量模板依赖并写入 package.json 与 manifest
-- 三个独立文件：`render.js`（构建）、`dev.js`（开发）、`preview.js`（预览）
+- **路径推导**：`render.js`、`dev.js` 必须从 `import.meta.url` 推导 `PIPELINE_DIR`，再用 `dirname(PIPELINE_DIR)` 推导 `SITE_ROOT`。不要用 `process.cwd()` 作为站点根；这样脚本既可通过 `cd .xiaoyi-ssg && npm run build/dev` 运行，也可从站点根用 `node .xiaoyi-ssg/*.js` 运行。
+- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown → HTML）、`chokidar`（文件监听，仅 dev.js）、`eta`（模板引擎）
+- 模板引擎：使用 `eta`（~2KB，ESM，支持 HTML 转义、raw HTML、条件、数组循环、异步、自定义过滤器）
+- 两个独立文件：`render.js`（构建）、`dev.js`（开发）
 - 允许生成 `assets/script.js`、`assets/interactions/*.js`、`assets/data/*.json` 来实现静态托管兼容的浏览器交互；交互不得依赖 dev server 才能工作
 
 ---
@@ -36,6 +36,7 @@ import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import yaml from 'js-yaml';
 import { marked } from 'marked';
+import { Eta } from 'eta';
 
 const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
 const SITE_ROOT = dirname(PIPELINE_DIR);
@@ -64,20 +65,154 @@ function loadCache() {
   return { version: 1, outputs: {} };
 }
 
-function loadTemplates() {
-  const templates = {};
-  const templatesDir = join(PIPELINE_DIR, 'templates');
-  for (const file of readdirSync(templatesDir)) {
-    if (file.endsWith('.html')) {
-      templates[file.replace(/\.html$/, '')] = readFileSync(join(templatesDir, file), 'utf-8');
-    }
-  }
-  return templates;
-}
-
 function loadInteractionsManifest() {
   if (!existsSync(INTERACTIONS_MANIFEST)) return { version: 1, interactions: [] };
   return JSON.parse(readFileSync(INTERACTIONS_MANIFEST, 'utf-8'));
+}
+
+// --- 运行时校验 ---
+
+class ValidationError extends Error {
+  constructor(field, message) {
+    super(`${field}: ${message}`);
+    this.name = 'ValidationError';
+    this.field = field;
+  }
+}
+
+function validateRequired(obj, fields, prefix) {
+  for (const field of fields) {
+    if (!(field in obj)) {
+      throw new ValidationError(`${prefix}.${field}`, '缺少必需字段');
+    }
+  }
+}
+
+function validateType(value, type, field) {
+  if (type === 'string' && typeof value !== 'string') {
+    throw new ValidationError(field, `期望 string，实际 ${typeof value}`);
+  }
+  if (type === 'number' && typeof value !== 'number') {
+    throw new ValidationError(field, `期望 number，实际 ${typeof value}`);
+  }
+  if (type === 'boolean' && typeof value !== 'boolean') {
+    throw new ValidationError(field, `期望 boolean，实际 ${typeof value}`);
+  }
+  if (type === 'array' && !Array.isArray(value)) {
+    throw new ValidationError(field, `期望 array，实际 ${typeof value}`);
+  }
+  if (type === 'object' && (typeof value !== 'object' || Array.isArray(value))) {
+    throw new ValidationError(field, `期望 object，实际 ${typeof value}`);
+  }
+}
+
+function validatePattern(value, pattern, field) {
+  if (typeof value === 'string' && !new RegExp(pattern).test(value)) {
+    throw new ValidationError(field, `不匹配模式 ${pattern}，实际值: ${value}`);
+  }
+}
+
+function validateDesignTokens(tokens) {
+  validateRequired(tokens, ['version', 'theme_ref', 'theme_manifesto_hash', 'tokens', 'darkMode', 'seed'], 'design-tokens');
+  validateType(tokens.version, 'number', 'design-tokens.version');
+  validateType(tokens.seed, 'number', 'design-tokens.seed');
+  validatePattern(tokens.theme_manifesto_hash, '^sha256:[a-f0-9]{64}$', 'design-tokens.theme_manifesto_hash');
+
+  const t = tokens.tokens;
+  validateRequired(t, ['color', 'typography', 'layout', 'component', 'motion'], 'design-tokens.tokens');
+
+  // Color
+  const colorRequired = ['background', 'backgroundDark', 'text', 'textDark', 'accent', 'accentHover', 'muted', 'border', 'borderDark', 'focus', 'error', 'success'];
+  validateRequired(t.color, colorRequired, 'design-tokens.tokens.color');
+
+  // Typography
+  validateRequired(t.typography, ['fontDisplay', 'fontBody', 'fontMono', 'scale', 'lineLength', 'letterSpacing'], 'design-tokens.tokens.typography');
+  validatePattern(t.typography.lineLength, '^[\\d.]+ch$', 'design-tokens.tokens.typography.lineLength');
+
+  // Scale
+  const scaleRequired = ['h1', 'h2', 'h3', 'body', 'small', 'micro'];
+  validateRequired(t.typography.scale, scaleRequired, 'design-tokens.tokens.typography.scale');
+  for (const key of scaleRequired) {
+    validatePattern(t.typography.scale[key], '^(clamp\\([^)]+\\)|[\\d.]+(rem|em|px))\\s*/\\s*[\\d.]+$', `design-tokens.tokens.typography.scale.${key}`);
+  }
+
+  // Layout
+  validateRequired(t.layout, ['containerMax', 'headerHeight', 'footerHeight', 'sidebarWidth', 'gridColumns', 'gutter', 'rhythm', 'radius'], 'design-tokens.tokens.layout');
+  validateType(t.layout.gridColumns, 'number', 'design-tokens.tokens.layout.gridColumns');
+
+  // Component
+  validateRequired(t.component, ['card', 'cardMedia', 'nav', 'button', 'form', 'blockquote', 'code', 'pre', 'media', 'pagination', 'breadcrumb'], 'design-tokens.tokens.component');
+
+  // Motion
+  validateRequired(t.motion, ['entrance', 'hover', 'focus', 'transitionFast', 'transitionBase'], 'design-tokens.tokens.motion');
+  validatePattern(t.motion.transitionFast, '^[\\d.]+ms\\s+[a-z-]+$', 'design-tokens.tokens.motion.transitionFast');
+  validatePattern(t.motion.transitionBase, '^[\\d.]+ms\\s+[a-z-\\(\\)\\d.,]+$', 'design-tokens.tokens.motion.transitionBase');
+
+  // DarkMode
+  validateRequired(tokens.darkMode, ['color'], 'design-tokens.darkMode');
+  validateRequired(tokens.darkMode.color, ['background', 'text', 'border', 'muted'], 'design-tokens.darkMode.color');
+}
+
+function validateConfig(config) {
+  validateRequired(config, ['site', 'pages', 'per_page'], 'config');
+  validateRequired(config.site, ['title', 'author'], 'config.site');
+  validateType(config.pages, 'array', 'config.pages');
+  if (config.pages.length === 0) {
+    throw new ValidationError('config.pages', '至少需要一个内容类型');
+  }
+  validateType(config.per_page, 'number', 'config.per_page');
+  if (config.per_page < 1 || config.per_page > 100) {
+    throw new ValidationError('config.per_page', '必须在 1-100 之间');
+  }
+}
+
+function validateContentTypes(contentTypes) {
+  validateRequired(contentTypes, ['version', 'types', 'nav_order'], 'content-types');
+  validateType(contentTypes.types, 'object', 'content-types.types');
+  validateType(contentTypes.nav_order, 'array', 'content-types.nav_order');
+
+  for (const [typeKey, typeDef] of Object.entries(contentTypes.types)) {
+    const prefix = `content-types.types.${typeKey}`;
+    validateRequired(typeDef, ['label', 'dir', 'fields', 'list_template', 'detail_template'], prefix);
+    validateType(typeDef.fields, 'object', `${prefix}.fields`);
+
+    for (const [fieldName, fieldDef] of Object.entries(typeDef.fields)) {
+      validateRequired(fieldDef, ['type'], `${prefix}.fields.${fieldName}`);
+      if (!['string', 'datetime', 'date', 'boolean', 'string[]', 'url', 'number', 'object'].includes(fieldDef.type)) {
+        throw new ValidationError(`${prefix}.fields.${fieldName}.type`, `不支持的类型: ${fieldDef.type}`);
+      }
+    }
+  }
+}
+
+function validateAll(config, tokens, contentTypes) {
+  const errors = [];
+  try { validateConfig(config); } catch (e) { errors.push(e.message); }
+  try { validateDesignTokens(tokens); } catch (e) { errors.push(e.message); }
+  try { validateContentTypes(contentTypes); } catch (e) { errors.push(e.message); }
+
+  if (errors.length > 0) {
+    console.error('\n校验失败：');
+    for (const err of errors) {
+      console.error(`  ✗ ${err}`);
+    }
+    process.exit(1);
+  }
+}
+
+// 初始化 Eta 模板引擎
+function initTemplates() {
+  return new Eta({
+    views: join(PIPELINE_DIR, 'templates'),
+    cache: true,
+    rmWhitespace: false,
+  });
+}
+
+// 带布局继承的渲染
+function renderWithLayout(eta, templateName, data) {
+  const content = eta.render(templateName, data);
+  return eta.render('base', { ...data, body: content });
 }
 
 // 主构建流程
@@ -87,7 +222,11 @@ async function build(fresh = false) {
   const contentTypes = loadContentTypes();
   const interactions = loadInteractionsManifest();
   const cache = loadCache();
-  const templates = loadTemplates();
+
+  // 启动时校验
+  validateAll(config, tokens, contentTypes);
+
+  const eta = initTemplates();
 
   // 1. 扫描内容
   const allItems = scanContent(contentTypes);
@@ -99,7 +238,7 @@ async function build(fresh = false) {
   const interactionData = buildInteractionData(allItems, contentTypes, interactions, config);
 
   // 3. 渲染各页面（包含交互钩子）
-  const outputs = renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tokens, contentTypes, templates, interactions, cache, fresh);
+  const outputs = renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tokens, contentTypes, eta, interactions, cache, fresh);
 
   // 4. 复制资源并写入交互数据
   copyAssets();
@@ -108,9 +247,12 @@ async function build(fresh = false) {
   // 5. 生成附加产物
   generateFeeds(allItems, config);
   generateSitemap(outputs, config);
-  generate404(config, tokens, templates, nav);
+  generate404(config, tokens, eta, nav);
 
-  // 6. 保存缓存
+  // 6. 可选图片处理
+  await processImages(config, pipelineManifest);
+
+  // 7. 保存缓存
   saveCache(cache);
 
   // 7. 输出摘要
@@ -205,9 +347,10 @@ function parseContentFile(filePath, typeKey, typeDef) {
     }
   }
 
-  // 计算 slug
+  // 计算 slug（支持 Unicode）
   let slug = basename(filePath, '.md');
-  slug = slug.replace(/^\d{4}-\d{2}-\d{2}-/, '');
+  slug = slug.replace(/^\d{4}-\d{2}-\d{2}-/, ''); // 移除日期前缀
+  slug = generateUniqueSlug(slug, typeKey);
 
   // 正文
   const body = content.slice(fmMatch[0].length).trim();
@@ -230,6 +373,41 @@ function parseContentFile(filePath, typeKey, typeDef) {
       Object.entries(fm).filter(([k]) => !['title','date','tags','categories','cover','excerpt','draft'].includes(k))
     )
   };
+}
+
+// Slug 生成：支持 Unicode + URL 安全
+const slugSeen = new Map(); // typeKey -> Set of slugs
+
+function generateUniqueSlug(rawSlug, typeKey) {
+  // 保留 Unicode 字符，转换为 URL 安全格式
+  // 中文/日文等保留原字符，空格转连字符，移除特殊字符
+  let slug = rawSlug
+    .toLowerCase()
+    .replace(/\s+/g, '-')           // 空格 → 连字符
+    .replace(/[^\p{L}\p{N}\-]/gu, '') // 保留字母、数字、连字符，移除其他
+    .replace(/-+/g, '-')            // 合并连续连字符
+    .replace(/^-|-$/g, '');          // 移除首尾连字符
+
+  if (!slug) slug = 'untitled';
+
+  // 碰撞检测：同类型内 slug 必须唯一
+  if (!slugSeen.has(typeKey)) {
+    slugSeen.set(typeKey, new Set());
+  }
+  const seen = slugSeen.get(typeKey);
+
+  if (!seen.has(slug)) {
+    seen.add(slug);
+    return slug;
+  }
+
+  // 碰撞：追加数字后缀
+  let counter = 2;
+  while (seen.has(`${slug}-${counter}`)) counter++;
+  const uniqueSlug = `${slug}-${counter}`;
+  seen.add(uniqueSlug);
+  console.warn(`Warning: slug collision for "${rawSlug}" in ${typeKey}, using "${uniqueSlug}"`);
+  return uniqueSlug;
 }
 
 function formatDate(dateStr) {
@@ -323,30 +501,182 @@ function itemSummary(item) {
 }
 ```
 
-### 模板渲染
+### 模板引擎：Eta
+
+使用 `eta` 作为模板引擎，提供完整的模板语法支持：
 
 ```javascript
-function renderTemplate(template, data) {
-  let html = template;
-  // 支持 ${key} 与 ${object.nested.path} 形式；实际生成器还必须支持循环、条件、HTML 转义、raw HTML、属性安全输出
-  html = html.replace(/\$\{([^}]+)\}/g, (match, path) => {
-    const value = path.split('.').reduce((obj, key) => (obj == null ? undefined : obj[key]), data);
-    return value != null ? String(value) : '';
-  });
-  return html;
+import { Eta } from 'eta';
+
+const eta = new Eta({
+  views: join(PIPELINE_DIR, 'templates'),
+  cache: true,
+  rmWhitespace: false,
+  escapeFunction: eta.escapeXml,  // 默认 HTML 转义
+});
+
+// 同步渲染
+function renderTemplate(templateName, data) {
+  return eta.render(templateName, data);
 }
+
+// 带布局继承的渲染
+function renderWithLayout(layoutName, templateName, data) {
+  const content = eta.render(templateName, data);
+  return eta.render(layoutName, { ...data, body: content });
+}
+```
+
+### 模板语法
+
+#### 变量输出
+
+```html
+<!-- HTML 转义输出（默认） -->
+<title><%= it.site.title %></title>
+
+<!-- Raw HTML 输出（不转义） -->
+<article><%- it.item.bodyHtml %></article>
+
+<!-- 属性安全输出 -->
+<a href="<%= it.item.url %>" data-type="<%= it.item.type %>">
+```
+
+#### 条件渲染
+
+```html
+<% if (it.item.cover) { %>
+  <img src="<%= it.item.cover %>" alt="<%= it.item.title %>">
+<% } %>
+
+<% if (it.pagination.total > 1) { %>
+  <nav aria-label="Pagination">...</nav>
+<% } %>
+
+<% if (it.prev_item) { %>
+  <a href="<%= it.prev_item.url %>">上一篇: <%= it.prev_item.title %></a>
+<% } else { %>
+  <span aria-disabled="true">已是第一篇</span>
+<% } %>
+```
+
+#### 循环
+
+```html
+<!-- 列表页卡片 -->
+<% for (const item of it.items) { %>
+  <article class="card">
+    <h2><a href="<%= item.url %>"><%= item.title %></a></h2>
+    <time><%= item.dateDisplay %></time>
+    <p><%= item.excerpt %></p>
+  </article>
+<% } %>
+
+<!-- 面包屑（跳过第一项） -->
+<nav aria-label="Breadcrumb">
+  <ol class="breadcrumb">
+    <% for (const [i, crumb] of it.page.breadcrumb.entries()) { %>
+      <li><a href="<%= crumb.url %>"><%= crumb.title %></a></li>
+    <% } %>
+  </ol>
+</nav>
+
+<!-- 分页 -->
+<% if (it.pagination) { %>
+  <nav aria-label="Pagination">
+    <% if (it.pagination.prev_url) { %>
+      <a href="<%= it.pagination.prev_url %>">上一页</a>
+    <% } %>
+    <% for (const p of it.pagination.pages) { %>
+      <% if (p === '...') { %>
+        <span class="ellipsis">...</span>
+      <% } else if (p === it.pagination.current) { %>
+        <span class="current" aria-current="page"><%= p %></span>
+      <% } else { %>
+        <a href="<%= it.pagination.base_url + (p > 1 ? 'page/' + p + '/' : '') %>"><%= p %></a>
+      <% } %>
+    <% } %>
+    <% if (it.pagination.next_url) { %>
+      <a href="<%= it.pagination.next_url %>">下一页</a>
+    <% } %>
+  </nav>
+<% } %>
+```
+
+#### 辅助函数（在 data 中注入）
+
+```javascript
+// 渲染前注入辅助函数到 data
+const templateData = {
+  ...data,
+  // 路径工具
+  joinPath: (...parts) => joinPath(...parts),
+  normalizePath: (p) => normalizePath(p),
+  // 格式化
+  formatDate: (d) => formatDate(d),
+  truncate: (text, len = 200) => text.length > len ? text.slice(0, len) + '...' : text,
+  // 统计
+  typeCount: (typeKey) => (allItems[typeKey] || []).length,
+};
+```
+
+#### 布局继承
+
+`base.html` 通过 `<%- it.body %>` 插入子模板内容：
+
+```html
+<!-- base.html -->
+<!DOCTYPE html>
+<html lang="<%= it.site.language || 'zh' %>">
+<head>
+  <meta charset="UTF-8">
+  <title><%= it.page.title || it.site.title %></title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <%- include('./partials/header', it) %>
+  <main role="main">
+    <%- it.body %>
+  </main>
+  <%- include('./partials/footer', it) %>
+  <script src="/assets/script.js"></script>
+</body>
+</html>
+```
 
 function computeHash(contentFile, templateNames, tokens, config, interactions = { interactions: [] }) {
   const parts = [];
+  // 内容文件
   if (existsSync(contentFile)) parts.push(readFileSync(contentFile));
+  // 模板文件
   for (const name of templateNames) {
-    if (templates[name]) parts.push(Buffer.from(templates[name]));
+    const tplPath = join(PIPELINE_DIR, 'templates', `${name}.html`);
+    if (existsSync(tplPath)) parts.push(readFileSync(tplPath));
   }
+  // 设计 tokens
   parts.push(Buffer.from(JSON.stringify(tokens, null, 0)));
+  // 配置（关键字段）
   parts.push(Buffer.from(JSON.stringify({ site: config.site, pages: config.pages, per_page: config.per_page })));
+  // 交互 manifest
   parts.push(Buffer.from(JSON.stringify(interactions)));
-  for (const file of listAssetFiles(join(PIPELINE_DIR, 'assets'))) {
-    parts.push(readFileSync(file));
+  // 交互模块 + 数据文件（interactions/*.js, data/*.json）
+  const interactionDirs = [
+    join(PIPELINE_DIR, 'assets', 'interactions'),
+    join(PIPELINE_DIR, 'assets', 'data'),
+  ];
+  for (const dir of interactionDirs) {
+    for (const file of listAssetFiles(dir)) {
+      parts.push(readFileSync(file));
+    }
+  }
+  // 其他 assets（style.css, script.js 等）
+  const assetsDir = join(PIPELINE_DIR, 'assets');
+  if (existsSync(assetsDir)) {
+    for (const entry of readdirSync(assetsDir, { withFileTypes: true })) {
+      if (entry.isFile()) {
+        parts.push(readFileSync(join(assetsDir, entry.name)));
+      }
+    }
   }
   return createHash('sha256').update(Buffer.concat(parts.map(p => Buffer.isBuffer(p) ? p : Buffer.from(p)))).digest('hex');
 }
@@ -366,7 +696,23 @@ function listAssetFiles(dir) {
 ### 页面渲染（列表/详情/单页/首页）
 
 ```javascript
-function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tokens, contentTypes, templates, interactions, cache, fresh) {
+import { Eta } from 'eta';
+
+// 初始化 Eta 模板引擎
+function initTemplates() {
+  return new Eta({
+    views: join(PIPELINE_DIR, 'templates'),
+    cache: true,
+    rmWhitespace: false,
+  });
+}
+
+function renderWithLayout(eta, templateName, data) {
+  const content = eta.render(templateName, data);
+  return eta.render('base', { ...data, body: content });
+}
+
+function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tokens, contentTypes, eta, interactions, cache, fresh) {
   const outputs = [];
   const buildTime = new Date().toISOString();
 
@@ -389,7 +735,8 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
       };
       const outputPath = outputPathFor(pageUrl);
       const contentFile = join(SITE_ROOT, typeDef.dir);
-      writeOutput(outputPath, renderTemplate(templates[`list-${typeKey}`], data), fresh, cache, contentFile, [`list-${typeKey}`, 'base'], interactions);
+      const html = renderWithLayout(eta, `list-${typeKey}`, data);
+      writeOutput(outputPath, html, fresh, cache, contentFile, [`list-${typeKey}`, 'base'], interactions);
       outputs.push(outputPath);
     }
   }
@@ -408,7 +755,8 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
         item, prev_item: pn.prev, next_item: pn.next, tokens, build_time: buildTime
       };
       const outputPath = outputPathFor(item.url);
-      writeOutput(outputPath, renderTemplate(templates[`detail-${typeKey}`], data), fresh, cache, join(SITE_ROOT, contentTypes.types[typeKey].dir), [`detail-${typeKey}`, 'base'], interactions);
+      const html = renderWithLayout(eta, `detail-${typeKey}`, data);
+      writeOutput(outputPath, html, fresh, cache, join(SITE_ROOT, contentTypes.types[typeKey].dir), [`detail-${typeKey}`, 'base'], interactions);
       outputs.push(outputPath);
     }
   }
@@ -424,7 +772,8 @@ function renderAllPages(allItems, nav, paginationPlans, prevNextMap, config, tok
     latest_by_type: latestByType, tokens, build_time: buildTime
   };
   const indexOutputPath = outputPathFor('/');
-  writeOutput(indexOutputPath, renderTemplate(templates.index, indexData), fresh, cache, SITE_ROOT, ['index', 'base'], interactions);
+  const indexHtml = renderWithLayout(eta, 'index', indexData);
+  writeOutput(indexOutputPath, indexHtml, fresh, cache, SITE_ROOT, ['index', 'base'], interactions);
   outputs.push(indexOutputPath);
 
   return outputs;
@@ -467,14 +816,14 @@ function generateSitemap(outputs, config) {
   writeFileSync(join(PUBLIC_DIR, 'sitemap.xml'), sitemap, 'utf-8');
 }
 
-function generate404(config, tokens, templates, nav) {
+function generate404(config, tokens, eta, nav) {
   const data = {
     site: config.site, nav, page: { type: 'page', title: '404 - Page Not Found', url: '/404/',
       breadcrumb: [breadcrumbItem(config.site.title, '/'), breadcrumbItem('404', '/404/')] },
     item: { title: 'Page Not Found', bodyHtml: "<p>The page you're looking for doesn't exist.</p>" },
     tokens, build_time: new Date().toISOString()
   };
-  const html = renderTemplate(templates.page, data);
+  const html = renderWithLayout(eta, 'page', data);
   writeFileSync(join(PUBLIC_DIR, '404.html'), html, 'utf-8');
 }
 ```
@@ -507,10 +856,115 @@ function printSummary(outputs) {
   console.log(`Output: ${PUBLIC_DIR}`);
 }
 
+// --- 可选：图片处理管线 ---
+
+/**
+ * 图片处理功能（可选，需安装 sharp：npm install sharp）
+ *
+ * 通过 interactions.manifest.json 或 pipeline-manifest.json 启用：
+ * { "image_processing": { "enabled": true, "formats": ["webp"], "sizes": [400, 800, 1200] } }
+ *
+ * 功能：
+ * 1. 扫描 source/_media/ 和内容中引用的图片
+ * 2. 生成响应式尺寸（sm/md/lg）
+ * 3. 转换为 WebP/AVIF（可选）
+ * 4. 生成 blur placeholder（base64 低质量占位图）
+ * 5. 输出到 public/assets/images/（带哈希文件名）
+ */
+
+async function processImages(config, pipelineManifest) {
+  const imgConfig = pipelineManifest?.image_processing;
+  if (!imgConfig?.enabled) return;
+
+  let sharp;
+  try {
+    sharp = (await import('sharp')).default;
+  } catch {
+    console.warn('Warning: image processing enabled but sharp not installed. Run: npm install sharp');
+    return;
+  }
+
+  const sourceMediaDir = join(SITE_ROOT, 'source', '_media');
+  const outputDir = join(PUBLIC_DIR, 'assets', 'images');
+  mkdirSync(outputDir, { recursive: true });
+
+  const formats = imgConfig.formats || ['webp'];
+  const sizes = imgConfig.sizes || [400, 800, 1200];
+
+  if (!existsSync(sourceMediaDir)) return;
+
+  const imageFiles = readdirSync(sourceMediaDir).filter(f =>
+    /\.(jpg|jpeg|png|gif|svg)$/i.test(f)
+  );
+
+  for (const file of imageFiles) {
+    const inputPath = join(sourceMediaDir, file);
+    const ext = extname(file).toLowerCase();
+    const name = basename(file, ext);
+    const stats = statSync(inputPath);
+
+    // 跳过小文件（< 10KB）和 SVG
+    if (stats.size < 10240 || ext === '.svg') {
+      cpSync(inputPath, join(outputDir, file));
+      continue;
+    }
+
+    try {
+      const image = sharp(inputPath);
+      const metadata = await image.metadata();
+
+      // 生成响应式尺寸
+      for (const size of sizes) {
+        if (metadata.width && metadata.width <= size) continue;
+
+        const resized = sharp(inputPath).resize({ width: size, withoutEnlargement: true });
+
+        // 原始格式
+        const origOut = join(outputDir, `${name}-${size}${ext}`);
+        await resized.toFile(origOut);
+
+        // WebP
+        if (formats.includes('webp')) {
+          const webpOut = join(outputDir, `${name}-${size}.webp`);
+          await resized.webp({ quality: 80 }).toFile(webpOut);
+        }
+      }
+
+      // 生成 blur placeholder
+      const blurBuffer = await sharp(inputPath)
+        .resize(20, 20, { fit: 'inside' })
+        .blur(3)
+        .webp({ quality: 20 })
+        .toBuffer();
+
+      const blurData = `data:image/webp;base64,${blurBuffer.toString('base64')}`;
+
+      // 写入 blur metadata
+      const metaOut = join(outputDir, `${name}.json`);
+      writeFileSync(metaOut, JSON.stringify({
+        width: metadata.width,
+        height: metadata.height,
+        blur: blurData,
+        sizes: sizes.filter(s => !metadata.width || metadata.width > s),
+      }, null, 2));
+
+    } catch (e) {
+      console.warn(`Warning: failed to process image ${file}: ${e.message}`);
+      // 降级：直接复制
+      cpSync(inputPath, join(outputDir, file));
+    }
+  }
+}
+
 // 入口
-const fresh = process.argv.includes('--fresh');
-build(fresh).catch(err => { console.error(err); process.exit(1); });
-```
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('render.js') ||
+  process.argv[1].endsWith('render')
+);
+if (isDirectRun) {
+  const fresh = process.argv.includes('--fresh');
+  build(fresh).catch(err => { console.error(err); process.exit(1); });
+}
 
 ---
 
@@ -527,7 +981,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, extname, relative } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { build } from './render.js';
 import chokidar from 'chokidar';
 
 const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -571,7 +1025,6 @@ function startServer(port) {
     // 静态文件服务
     let filePath = join(PUBLIC_DIR, req.url === '/' ? 'index.html' : req.url);
     if (!existsSync(filePath)) {
-      // 尝试 index.html
       filePath = join(PUBLIC_DIR, req.url, 'index.html');
     }
     if (!existsSync(filePath)) {
@@ -585,7 +1038,8 @@ function startServer(port) {
     const mimeTypes = {
       '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
       '.json': 'application/json', '.xml': 'application/xml', '.png': 'image/png',
-      '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon'
+      '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+      '.woff2': 'font/woff2', '.woff': 'font/woff'
     };
 
     res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
@@ -616,12 +1070,15 @@ function startServer(port) {
   });
 }
 
-// 初次构建
+// 初次构建（进程内执行，避免 execSync 开销）
 console.log('Building...');
-execSync('node render.js', { cwd: PIPELINE_DIR, stdio: 'inherit' });
-
-// 启动服务器
-startServer(port);
+build(false).then(() => {
+  // 启动服务器
+  startServer(port);
+}).catch(err => {
+  console.error('Initial build failed:', err);
+  process.exit(1);
+});
 
 // 文件监听
 const watcher = chokidar.watch([
@@ -635,79 +1092,46 @@ const watcher = chokidar.watch([
 ], { cwd: SITE_ROOT, ignoreInitial: true });
 
 let buildTimeout = null;
+let isBuilding = false;
+
 watcher.on('all', (event, path) => {
   console.log(`\n  Change detected: ${path}`);
-  // 防抖
+  // 防抖 + 构建锁
   if (buildTimeout) clearTimeout(buildTimeout);
-  buildTimeout = setTimeout(() => {
+  if (isBuilding) return;
+  buildTimeout = setTimeout(async () => {
+    isBuilding = true;
     console.log('  Rebuilding...');
     try {
-      execSync('node render.js', { cwd: PIPELINE_DIR, stdio: 'inherit' });
+      await build(false);
       console.log('  Reload triggered');
       sendReloadAll();
     } catch (e) {
       console.error('  Build error:', e.message);
+    } finally {
+      isBuilding = false;
     }
   }, 300);
 });
 ```
 
----
+### render.js 导出
 
-## preview.js — 静态预览服务器
+render.js 必须导出 `build` 函数供 dev.js 使用：
 
 ```javascript
-#!/usr/bin/env node
-/**
- * xiaoyi-ssg 静态预览服务器（无 watch）
- */
-import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, extname } from 'path';
-import { fileURLToPath } from 'url';
+// render.js 末尾
+export { build };
 
-const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
-const SITE_ROOT = dirname(PIPELINE_DIR);
-const PUBLIC_DIR = join(SITE_ROOT, 'public');
-
-let port = 8000;
-const portArg = process.argv.indexOf('--port');
-if (portArg !== -1 && process.argv[portArg + 1]) {
-  port = parseInt(process.argv[portArg + 1], 10);
+// 入口（仅直接运行时执行）
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('render.js') ||
+  process.argv[1].endsWith('render')
+);
+if (isDirectRun) {
+  const fresh = process.argv.includes('--fresh');
+  build(fresh).catch(err => { console.error(err); process.exit(1); });
 }
-
-const server = createServer((req, res) => {
-  let filePath = join(PUBLIC_DIR, req.url === '/' ? 'index.html' : req.url);
-  if (!existsSync(filePath)) {
-    filePath = join(PUBLIC_DIR, req.url, 'index.html');
-  }
-  if (!existsSync(filePath)) {
-    res.writeHead(404);
-    res.end('Not found');
-    return;
-  }
-  const content = readFileSync(filePath);
-  const ext = extname(filePath);
-  const mimeTypes = {
-    '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
-    '.json': 'application/json', '.xml': 'application/xml', '.png': 'image/png',
-    '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon'
-  };
-  res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
-  res.end(content);
-});
-
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    server.listen(++port);
-  } else {
-    throw err;
-  }
-});
-
-server.listen(port, () => {
-  console.log(`\n  Preview server running at http://localhost:${port}\n`);
-});
 ```
 
 ---
@@ -808,12 +1232,14 @@ AI 生成 `render.js` 时，应替换文件头部的元数据：
 ## 关键生成约束
 
 1. **ESM 模块** — 所有 `.js` 文件使用 `import`/`export`，`package.json` 含 `"type": "module"`
-2. **三文件分离** — `render.js`（构建）、`dev.js`（开发）、`preview.js`（预览）各自独立
-3. **依赖默认最小** — 默认使用 `js-yaml`、`marked`、`chokidar`；必要交互需要额外包时必须固定版本并记录到 `interactions.manifest.json`
-4. **模板能力完整** — 支持 HTML 转义、raw HTML、条件、数组循环、属性安全输出和 `data-*` 交互钩子
+2. **两文件分离** — `render.js`（构建）、`dev.js`（开发）各自独立
+3. **依赖默认最小** — 默认使用 `js-yaml`、`marked`、`chokidar`、`eta`；必要交互需要额外包时必须固定版本并记录到 `interactions.manifest.json`
+4. **模板能力完整** — 使用 Eta 引擎，支持 HTML 转义、raw HTML、条件、数组循环、异步、自定义过滤器
 5. **确定性** — 相同输入产生相同输出（缓存哈希机制）
 6. **增量构建** — 哈希缓存机制，未变文件不重新渲染
 7. **浏览器交互** — build 产物必须能加载 `assets/script.js` 与所需模块；搜索/筛选/灯箱/表单等交互不得依赖 dev server
 8. **dev server 注入** — 仅 dev 模式在 HTML `</body>` 前注入 SSE 脚本，build 产物不含
-9. **端口自动递增** — dev.js / preview.js 端口被占用时自动 +1 重试
-10. **防抖** — dev.js 文件变更后 300ms 防抖，避免连续触发多次构建
+9. **端口自动递增** — dev.js 端口被占用时自动 +1 重试
+10. **防抖** — dev.js 文件变更后 300ms 防抖 + 构建锁，避免并发构建
+11. **运行时校验** — render.js 启动时校验 config.yml、design-tokens.json、content-types.json
+12. **图片处理** — 可选功能，需安装 sharp，生成响应式尺寸 + WebP + blur placeholder

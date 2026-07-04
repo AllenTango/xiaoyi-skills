@@ -129,7 +129,7 @@
    - .xiaoyi-ssg-design-tokens.json
    - .xiaoyi-ssg/content-types.json
    - source/ 目录结构（按 content-types 创建缺失的 _<type>/，创建 source/_media/；不得覆盖已有文件）
-   - <PIPELINE_DIR>/ (render.js, dev.js, preview.js, package.json, templates/, assets/, config.schema.json, pipeline-manifest.json)
+    - <PIPELINE_DIR>/ (render.js, dev.js, package.json, templates/, assets/, config.schema.json, pipeline-manifest.json)
    - .gitignore（忽略 public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/）
 
 8. 安装依赖并首次构建：
@@ -249,7 +249,6 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 ```
 1. 若 public/ 不存在或内容已变更 → 提示先运行 build
 2. 建议：
-   - 静态预览：node .xiaoyi-ssg/preview.js（启动静态服务器）
    - 实时开发：node .xiaoyi-ssg/dev.js（watch + live reload）
    - 或直接：open public/index.html
 ```
@@ -433,11 +432,10 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 .xiaoyi-ssg/
 ├── render.js                 # 核心渲染脚本（Node.js ESM，增量构建）
 ├── dev.js                    # 开发服务器（watch + serve + live reload via SSE）
-├── preview.js                # 静态预览服务器（无 watch）
-├── package.json              # 依赖声明（js-yaml, marked, chokidar）
+├── package.json              # 依赖声明（js-yaml, marked, chokidar, eta）
 ├── package-lock.json         # 依赖锁定（npm install 生成）
 ├── node_modules/             # 管线依赖（git 忽略）
-├── templates/                # 该项目专用模板（已内联 tokens 为 CSS 变量）
+├── templates/                # 该项目专用模板（Eta 引擎）
 │   ├── base.html             # 布局骨架：header + main + footer
 │   ├── list-<type>.html      # 列表页模板（含 pagination、card grid）
 │   ├── detail-<type>.html    # 详情页模板（含 prev/next、完整内容）
@@ -464,13 +462,13 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
   "scripts": {
     "build": "node render.js",
     "build:fresh": "node render.js --fresh",
-    "dev": "node dev.js",
-    "preview": "node preview.js"
+    "dev": "node dev.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
     "marked": "^12.0.0",
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "eta": "^3.2.0"
   }
 }
 ```
@@ -503,10 +501,12 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 
 ### 技术约束
 - Node.js 18+（LTS，内置 `fetch`、`fs.cpSync`）
-- ESM 模块系统（`"type": "module"`）
-- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown 解析）、`chokidar`（文件监听，仅 dev.js）
-- 模板引擎：支持 HTML 转义、raw HTML、条件、数组循环、属性安全输出和交互钩子；复杂站点可引入轻量模板依赖并记录原因
-- 单文件 `render.js`（构建）+ `dev.js`（开发）+ `preview.js`（预览）
+- ESM 模块系统（`"type": "module"`，使用 `import`/`export`）
+- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown 解析）、`chokidar`（文件监听，仅 dev.js）、`eta`（模板引擎）
+- 模板引擎：使用 `eta`（~2KB，ESM，支持 HTML 转义、raw HTML、条件、数组循环、异步、自定义过滤器）
+- 两文件分离：`render.js`（构建）+ `dev.js`（开发）
+- 运行时校验：render.js 启动时校验 config.yml、design-tokens.json、content-types.json
+- 可选图片处理：sharp（需单独安装），生成响应式尺寸 + WebP + blur placeholder
 
 ### render.js 核心
 
@@ -522,6 +522,7 @@ import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import yaml from 'js-yaml';
 import { marked } from 'marked';
+import { Eta } from 'eta';
 
 const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
 const SITE_ROOT = dirname(PIPELINE_DIR);
@@ -534,14 +535,12 @@ const tokens = JSON.parse(readFileSync(join(SITE_ROOT, '.xiaoyi-ssg-design-token
 const contentTypes = JSON.parse(readFileSync(join(PIPELINE_DIR, 'content-types.json'), 'utf-8'));
 const cache = existsSync(CACHE_FILE) ? JSON.parse(readFileSync(CACHE_FILE, 'utf-8')) : { version: 1, outputs: {} };
 
-// 加载模板
-const templates = {};
-const templatesDir = join(PIPELINE_DIR, 'templates');
-for (const file of readdirSync(templatesDir)) {
-  if (file.endsWith('.html')) {
-    templates[file.replace(/\.html$/, '')] = readFileSync(join(templatesDir, file), 'utf-8');
-  }
-}
+// 初始化 Eta 模板引擎
+const eta = new Eta({
+  views: join(PIPELINE_DIR, 'templates'),
+  cache: true,
+  rmWhitespace: false,
+});
 
 const fresh = process.argv.includes('--fresh');
 
@@ -558,12 +557,12 @@ const fresh = process.argv.includes('--fresh');
 import { createServer } from 'http';
 import { readFileSync, statSync } from 'fs';
 import { join, extname, relative } from 'path';
+import { build } from './render.js';
 import chokidar from 'chokidar';
 
-// 复用 render.js 的构建逻辑（import 或 execSync）
 // 1. 启动 HTTP 服务器 serve public/
 // 2. chokidar 监听 source/ + templates/ + tokens + config
-// 3. 变更 → 增量构建 → SSE 推送 reload
+// 3. 变更 → 增量构建（进程内执行，避免 execSync 开销） → SSE 推送 reload
 // 4. HTML 响应注入 SSE 客户端脚本
 
 const SSE_SCRIPT = `<script>const __sfEs=new EventSource('/__live');__sfEs.addEventListener('reload',()=>location.reload());</script>`;
@@ -602,19 +601,7 @@ const data = {
 };
 ```
 
-模板渲染必须支持变量、循环、条件、HTML 转义、raw HTML、属性安全输出和交互钩子。简化示例：
-
-```javascript
-function renderTemplate(template, data) {
-  let html = template;
-  // 支持 ${key} 与 ${object.nested} 形式
-  html = html.replace(/\$\{([^}]+)\}/g, (match, path) => {
-    const value = path.split('.').reduce((obj, key) => obj?.[key], data);
-    return value ?? '';
-  });
-  return html;
-}
-```
+模板使用 Eta 引擎渲染，支持 HTML 转义、raw HTML、条件、数组循环、异步、自定义过滤器。
 
 内容项标准字段：
 
@@ -659,7 +646,7 @@ function renderTemplate(template, data) {
 ```
 
 **算法**：
-- 对每个输出文件，计算输入哈希：内容文件 + 使用的模板文件 + tokens + config 关键字段 → SHA256（`crypto.createHash`）
+- 对每个输出文件，计算输入哈希：内容文件 + 使用的模板文件 + tokens + config 关键字段 + interactions manifest + 交互模块 + 数据文件 + 样式/脚本 → SHA256（`crypto.createHash`）
 - 若哈希匹配缓存且非 `--fresh` → **跳过渲染**，直接复用 `public/` 现有文件
 - `--fresh`：忽略缓存，强制重新渲染所有页面
 - 单页构建（隐式）：只处理变更内容关联的输出，其余复用

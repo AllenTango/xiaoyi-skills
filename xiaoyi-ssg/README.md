@@ -149,11 +149,10 @@ my-site/
 ├── .xiaoyi-ssg/                    # Generated pipeline source; commit it, ignore node_modules
 │   ├── render.js                   # Core renderer (Node.js ESM)
 │   ├── dev.js                      # Dev server (watch + serve + live reload via SSE)
-│   ├── preview.js                  # Static preview server
-│   ├── package.json                # Dependencies (js-yaml, marked, chokidar)
+│   ├── package.json                # Dependencies (js-yaml, marked, chokidar, eta)
 │   ├── package-lock.json           # Lockfile
 │   ├── node_modules/               # Pipeline dependencies (gitignored)
-│   ├── templates/                  # Project-specific templates (tokens inlined as CSS vars)
+│   ├── templates/                  # Project-specific templates (Eta engine)
 │   │   ├── base.html               # Layout skeleton: header + main + footer
 │   │   ├── list-<type>.html        # List page template (pagination, card grid)
 │   │   ├── detail-<type>.html      # Detail page template (prev/next, full content)
@@ -184,7 +183,7 @@ my-site/
     └── 404.html
 ```
 
-`source/` is user-owned content. Style changes, theme/reference updates, interaction updates, pipeline regeneration, build, dev, preview, and diagnose operations must not overwrite, delete, reformat, or bulk rewrite `source/**/*.md` or `source/_media/**`. Only explicit content operations should write there.
+`source/` is user-owned content. Style changes, theme/reference updates, interaction updates, pipeline regeneration, build, dev, and diagnose operations must not overwrite, delete, reformat, or bulk rewrite `source/**/*.md` or `source/_media/**`. Only explicit content operations should write there.
 
 ## Configuration (`config.yml`)
 
@@ -456,7 +455,7 @@ jobs:
 ## Requirements
 
 - **AI agent** with Read/Write/Edit/Glob/Grep/Bash tools (opencode, Claude Code, etc.)
-- **Node.js 18+** (for `render.js`, `dev.js`, and preview server)
+- **Node.js 18+** (for `render.js` and `dev.js`)
 
 Installing the skill via `npx skills add` already requires Node.js, so no additional runtime is needed.
 

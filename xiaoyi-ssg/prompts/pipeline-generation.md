@@ -42,7 +42,6 @@
 .xiaoyi-ssg/
 ├── render.js                 # 核心渲染脚本（构建）
 ├── dev.js                    # 开发服务器（watch + serve + live reload）
-├── preview.js                # 静态预览服务器
 ├── package.json              # 依赖声明
 ├── package-lock.json         # 依赖锁定
 ├── node_modules/             # npm install 生成，git 忽略
@@ -75,13 +74,13 @@
   "scripts": {
     "build": "node render.js",
     "build:fresh": "node render.js --fresh",
-    "dev": "node dev.js",
-    "preview": "node preview.js"
+    "dev": "node dev.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
     "marked": "^12.0.0",
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "eta": "^3.2.0"
   }
 }
 ```
@@ -107,13 +106,7 @@
   - HTML 响应拦截：在 `</body>` 前注入 SSE 客户端脚本
 - 详见 `prompts/render-node-spec.md`
 
-### 4. preview.js — 静态预览服务器
-
-- **单文件**，Node.js 18+，ESM
-- 零依赖（仅 `http` + `fs` 内置模块）
-- 功能：启动 HTTP 服务器 serve `public/`，无监听、无注入
-
-### 5. 模板生成原则
+### 4. 模板生成原则
 
 **base.html** — 布局骨架
 - `<header role="banner">`：站点标题链接首页、主导航（来自 `config.pages`）、移动端菜单按钮
@@ -271,7 +264,12 @@
   "templates": ["base.html", "list-post.html", ...],
   "interactions_hash": "sha256:...",
   "renderer_version": "2.0",
-  "runtime": "node"
+  "runtime": "node",
+  "image_processing": {
+    "enabled": false,
+    "formats": ["webp"],
+    "sizes": [400, 800, 1200]
+  }
 }
 ```
 
@@ -279,14 +277,22 @@
 
 - 所有文件内容作为字符串返回，由 AI 写入用户项目
 - 代码风格：ESM `import`、HTML 语义化、CSS 变量驱动
-- 依赖默认限 `js-yaml`、`marked`、`chokidar`；若交互需要额外包，必须固定版本、写入 manifest，并确保 `npm install && npm run build` 可运行
-- 确保生成的 `render.js`、`dev.js`、`preview.js` 可直接运行
+- 依赖默认限 `js-yaml`、`marked`、`chokidar`、`eta`；若交互需要额外包，必须固定版本、写入 manifest，并确保 `npm install && npm run build` 可运行
+- 确保生成的 `render.js`、`dev.js` 可直接运行
 
 ## 关键约束
 
 1. **Tokens 不可变**：生成的管线不再解析 tokens，仅使用内联的 CSS 变量值
 2. **模板包含交互钩子**：每个模板包含完整页面结构和必要 `data-*`/ARIA 钩子；允许浏览器 JS 做渐进增强
 3. **确定性**：相同输入 → 相同输出（seed 固定）
-4. **增量友好**：模板、交互 manifest、交互模块、交互数据变更会触发相关页面重建（哈希包含这些输入）
+4. **增量友好**：以下变更会触发相关页面重建（哈希包含这些输入）：
+   - 内容文件 `source/**/*.md`
+   - 模板文件 `.xiaoyi-ssg/templates/**/*.html`
+   - 设计 tokens `.xiaoyi-ssg-design-tokens.json`
+   - 配置 `config.yml`
+   - 交互 manifest `.xiaoyi-ssg/interactions.manifest.json`
+   - 交互模块 `.xiaoyi-ssg/assets/interactions/*.js`
+   - 交互数据 `.xiaoyi-ssg/assets/data/*.json`
+   - 样式/脚本 `.xiaoyi-ssg/assets/style.css`, `.xiaoyi-ssg/assets/script.js`
 5. **dev server 注入**：仅 dev 模式注入 SSE 脚本，build 产物不含注入脚本
 6. **ESM 模块**：所有 `.js` 文件使用 `import`/`export`，`package.json` 含 `"type": "module"`
