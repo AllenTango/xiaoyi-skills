@@ -14,19 +14,6 @@
     "source": "user-request|explicit-user-choice",
     "ui_language": "Chinese (Simplified)"
   },
-  "components_needed": [       // 基于 content-types 推导的组件清单
-    "base-layout",
-    "header",
-    "footer",
-    "nav",
-    "card-project",
-    "card-post",
-    "pagination",
-    "breadcrumb",
-    "article-meta",
-    "prev-next-nav",
-    "hero-index"
-  ],
   "interactions_needed": [      // 基于用户需求、参考站点和内容模型推导
     {
       "name": "project-filter",
@@ -45,24 +32,23 @@
 
 ```
 .xiaoyi-ssg/
-├── render.js                 # 核心渲染脚本（构建）
+├── render.js                 # 核心渲染脚本（构建）——模板清单驱动
 ├── dev.js                    # 开发服务器（watch + serve + live reload）
 ├── package.json              # 依赖声明
 ├── package-lock.json         # 依赖锁定
 ├── node_modules/             # npm install 生成，git 忽略
-├── templates/
-│   ├── base.html
-│   ├── list-<type>.html      // 每个 content-type 一套
-│   ├── detail-<type>.html    // 每个 content-type 一套
-│   ├── page.html
-│   └── index.html
+├── templates/                # 项目专用模板（由 manifest 决定清单）
+│   ├── base.html             // 布局骨架
+│   ├── *.html                // 由 template-manifest.json 声明的每个 page 模板
+│   └── partials/             // 可选片段
 ├── assets/
 │   ├── style.css             // 完整 CSS（含 Critical CSS 标记）
 │   ├── script.js             // 交互入口
 │   ├── interactions/         // 可选交互模块
-│   └── data/                 // 可选静态 JSON 数据，如 search-index.json
+│   └── data/                 // 可选静态 JSON 数据
+├── template-manifest.json    # 单一事实来源：声明 collections、templates、globals
 ├── config.schema.json        // 配置校验 schema
-├── content-types.json        // 副本
+├── content-types.json        // 内容类型定义（供 AI/校验用，渲染器不再直接读取）
 ├── interactions.manifest.json // 交互契约、依赖、fallback、验证点
 └── pipeline-manifest.json    // 元数据
 ```
@@ -101,57 +87,62 @@
 
 默认只使用以上依赖。若用户明确需要复杂图表、地图、全文搜索等交互，可以添加必要 npm 依赖；必须固定版本、避免 CDN-only 方案，并在 `interactions.manifest.json` 说明用途与 fallback。
 
-### 2. render.js — 核心渲染脚本
+### 2. render.js — 核心渲染脚本（模板清单驱动）
 
 - **单文件**，Node.js 18+，ESM（`import`）
-- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown → HTML）
-- 模板渲染必须支持数组、条件、HTML 转义、raw HTML、属性安全输出，以及 `data-*` 交互钩子；可自实现，也可在确有必要时加入轻量模板依赖
-- 必须包含：增量构建（哈希缓存）、全局数据计算、交互数据生成、模板渲染、资源拷贝、Feed/Sitemap/404 生成
-- 详见 `prompts/render-node-spec.md`
+- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown → HTML）、`eta`（模板引擎）
+- **核心逻辑**：
+  1. 读取 `template-manifest.json`（单一事实来源）
+  2. 扫描内容 → 构建 `collections`（按 manifest 的 collections 配置排序、分页、树形）
+  3. `expandTemplates()`：按 manifest.templates 展开为具体渲染任务
+  4. 遍历任务 → 渲染 → 写入 `public/`
+  5. 复制 assets、生成交互数据、Feed、Sitemap、404
+  6. 增量缓存（哈希包含：模板文件、manifest、tokens、配置、内容文件）
+- 详见 `prompts/render-node-spec.md`（新版）
 
 ### 3. dev.js — 开发服务器
 
 - **单文件**，Node.js 18+，ESM
-- 依赖：`chokidar`（文件监听）、复用 `render.js` 构建逻辑
+- 依赖：`chokidar`（文件监听）、复用 `render.js` 的 `build()` 函数
 - 功能：
   - HTTP 服务器 serve `public/`（端口 3000，被占用自动递增）
-  - chokidar 监听 `source/**/*.md`、`.xiaoyi-ssg/templates/**`、`.xiaoyi-ssg/assets/**`、`.xiaoyi-ssg/interactions.manifest.json`、`.xiaoyi-ssg-design-tokens.json`、`config.yml`、`source/_media/**`
+  - chokidar 监听 `source/**/*.md`、`.xiaoyi-ssg/templates/**`、`.xiaoyi-ssg/assets/**`、`.xiaoyi-ssg/template-manifest.json`、`.xiaoyi-ssg/content-types.json`、`.xiaoyi-ssg/interactions.manifest.json`、`.xiaoyi-ssg-design-tokens.json`、`config.yml`、`source/_media/**`
   - 变更 → 增量构建（复用 render.js 逻辑） → SSE 推送 reload
   - HTML 响应拦截：在 `</body>` 前注入 SSE 客户端脚本
-- 详见 `prompts/render-node-spec.md`
+- 详见 `prompts/render-node-spec.md`（新版）
 
-### 4. 模板生成原则
+### 4. template-manifest.json — 单一事实来源
 
-**base.html** — 布局骨架
+**由 AI 根据用户意图 + 内容模型生成**。声明：
+
+- `collections`：内容源配置（source 路径、排序、分页、singleton、tree）
+- `templates`：每个模板的名字、类型、布局、文件名、输出路径模板、数据绑定、展开策略
+- `globals`：全局注入数据
+
+AI 生成时的决策规则：
+
+| 用户意图 | 生成的 manifest 关键点 |
+|---------|---------------------|
+| "落地页，只要首页" | `collections.landing.singleton=true`；templates: base + landing(output="/") + 404 |
+| "博客/作品集" | `collections.posts.pagination` + `forEach: "collections"` (list) + `forEach: "items"` (detail) |
+| "文档站" | `collections.docs.tree=true`；templates: doc-index + doc-page(forEach: items) |
+| "组合站点" | 多 collections + 多 templates，按需组合 |
+
+### 5. 模板生成原则
+
+**base.html** — 布局骨架（layout 类型）
 - `<header role="banner">`：站点标题链接首页、主导航（来自 `config.pages`）、移动端菜单按钮
 - `<main role="main">`：容器宽度受 `tokens.layout.containerMax` 限制
 - `<footer role="contentinfo">`：版权、RSS链接、外部链接、UTC时钟
-- CSS 变量完整映射 tokens（见下）
+- CSS 变量完整映射 tokens
 - 无内联样式，仅语义化 class + CSS 变量
-- 在 `</body>` 前加载 `assets/script.js`。仅当页面需要大型独立交互时再按需加载模块或数据文件
+- 在 `</body>` 前加载 `assets/script.js`
 
-**list-<type>.html** — 列表页
-- 页面标题 (H1)
-- 面包屑导航
-- 卡片网格（复用对应 card 结构）
-- 分页控件（首页/上一页/页码/下一页/末页，当前页高亮）
-- 语义化：`<nav aria-label="Pagination">`
-- 若有搜索/筛选/排序需求，生成对应控件、`data-*` 属性、ARIA live region、清除按钮、空状态、无 JS fallback
-
-**detail-<type>.html** — 详情页
-- 面包屑导航
-- 文章标题、日期、标签、分类、封面图
-- 正文内容 (`body_html`)
-- 上一篇/下一篇导航（标题、链接、可选缩略图、日期）
-- 语义化：`<nav aria-label="Article navigation">`
-
-**page.html** — 通用页面
-- 面包屑导航
-- 标题、正文内容
-
-**index.html** — 首页
-- 若单一内容类型：重定向或直接渲染列表
-- 若多类型：聚合展示（各类型最新 N 条 + 入口链接）
+**page 模板** — 由 manifest 声明的每个 page 模板
+- 列表页（`forEach: "collections"` + `forEach: "pagination"`）：页面标题、面包屑、卡片网格、分页控件、搜索/筛选控件（若 manifest 声明）
+- 详情/文档页（`forEach: "items"`）：面包屑、标题、日期、标签、封面、正文、上一篇/下一篇（可选）、树形侧边栏（若 `tree: true`）
+- 首页/单例页（无 `forEach` 或 `singleton: true`）：聚合展示或单页内容
+- 404 页：固定 output `/404.html`
 
 **Breadcrumb / URL safety**
 - URL path data and visual separators must be separate.
@@ -205,6 +196,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    {
     --color-bg: <tokens.darkMode.color.background>;
     --color-text: <tokens.darkMode.color.text>;
     --color-border: <tokens.darkMode.color.border>;
@@ -275,15 +267,10 @@
   "theme_manifesto_hash": "sha256:...",
   "tokens_hash": "sha256:...",
   "content_types_hash": "sha256:...",
-  "templates": ["base.html", "list-post.html", ...],
+  "templates": ["base.html", "landing.html", "list.html", "detail.html", "doc-page.html", ...],
   "interactions_hash": "sha256:...",
-  "renderer_version": "2.0",
-  "runtime": "node",
-  "image_processing": {
-    "enabled": false,
-    "formats": ["webp"],
-    "sizes": [400, 800, 1200]
-  }
+  "renderer_version": "3.0",
+  "runtime": "node"
 }
 ```
 
@@ -302,11 +289,14 @@
 4. **增量友好**：以下变更会触发相关页面重建（哈希包含这些输入）：
    - 内容文件 `source/**/*.md`
    - 模板文件 `.xiaoyi-ssg/templates/**/*.html`
+   - 模板清单 `.xiaoyi-ssg/template-manifest.json`
    - 设计 tokens `.xiaoyi-ssg-design-tokens.json`
    - 配置 `config.yml`
+   - 内容类型 `.xiaoyi-ssg/content-types.json`
    - 交互 manifest `.xiaoyi-ssg/interactions.manifest.json`
    - 交互模块 `.xiaoyi-ssg/assets/interactions/*.js`
    - 交互数据 `.xiaoyi-ssg/assets/data/*.json`
    - 样式/脚本 `.xiaoyi-ssg/assets/style.css`, `.xiaoyi-ssg/assets/script.js`
 5. **dev server 注入**：仅 dev 模式注入 SSE 脚本，build 产物不含注入脚本
 6. **ESM 模块**：所有 `.js` 文件使用 `import`/`export`，`package.json` 含 `"type": "module"`
+7. **无硬编码模板集**：render.js 完全由 template-manifest.json 驱动，不内置 list/detail/index 等固定分支

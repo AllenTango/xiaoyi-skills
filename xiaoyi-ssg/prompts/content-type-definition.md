@@ -112,10 +112,7 @@ AI: "每页显示多少条？（默认 12）"
         "live_url": { "type": "url", "required": false },
         "description": { "type": "string", "required": true },
         "featured": { "type": "boolean", "default": false }
-      },
-      "list_template": "list-project.html",
-      "detail_template": "detail-project.html",
-      "per_page": 12
+      }
     },
     "post": {
       "label": "文章",
@@ -128,10 +125,7 @@ AI: "每页显示多少条？（默认 12）"
         "cover": { "type": "string", "required": false },
         "excerpt": { "type": "string", "required": false },
         "draft": { "type": "boolean", "default": false }
-      },
-      "list_template": "list-post.html",
-      "detail_template": "detail-post.html",
-      "per_page": 10
+      }
     },
     "about": {
       "label": "关于",
@@ -142,15 +136,17 @@ AI: "每页显示多少条？（默认 12）"
         "nav": { "type": "boolean", "default": true },
         "nav_title": { "type": "string", "required": false },
         "nav_order": { "type": "number", "required": false }
-      },
-      "list_template": "page.html",
-      "detail_template": "page.html",
-      "per_page": 1
+      }
     }
   },
   "nav_order": ["project", "post", "about"]
 }
 ```
+
+> **注意**：
+> - 模板选择由 `template-manifest.json` 的 `templates[]` 声明决定（参考 `prompts/template-manifest-generation.md`）
+> - 分页由 `manifest.collections[].pagination` 声明
+> - 单例页由 `manifest.collections[].singleton: true` 表达
 
 ## 字段类型校验规则
 
@@ -168,10 +164,12 @@ AI: "每页显示多少条？（默认 12）"
 ## 生成后的动作
 
 1. 写入 `<SITE_ROOT>/.xiaoyi-ssg/content-types.json`
-2. 写入 `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` 同步副本（供渲染脚本校验）
+2. 触发 `template-manifest.json` 同步更新（如新增内容类型，对应 collection 需新增，templates 视用户意图扩展）
 3. 创建 `source/_<type>/` 目录
-4. 触发 `REGENERATE_PIPELINE` 重新生成对应 `list-<type>.html`、`detail-<type>.html`
+4. 触发 `REGENERATE_PIPELINE` 重新生成对应模板与 manifest
 
 ## 给 AI 的提示
 
 > 你是内容建模师。引导用户定义**最小必要字段**，避免过度设计。每个字段要有明确用途（模板渲染、SEO、筛选、展示）。用户不确定时，给出该类型的标准建议。生成的 JSON 必须通过 `schemas/config.schema.json` 校验。
+>
+> **关键原则**：content-types.json 只定义**数据结构**（内容源、字段、类型），**不定义渲染方式**（列表/详情/分页等）。渲染相关的一切由 template-manifest.json 表达。

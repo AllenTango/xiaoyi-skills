@@ -1,11 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "xiaoyi-ssg Config Schema Template",
+  "description": "pages 仅表示内容类型启用/排序，渲染表现由 template-manifest.json 决定。theme 字段已废弃（设计 tokens 由 .xiaoyi-ssg-design-tokens.json 管理）。",
   "type": "object",
   "required": [
     "site",
-    "pages",
-    "per_page"
+    "pages"
   ],
   "properties": {
     "site": {
@@ -32,7 +32,8 @@
         },
         "language": {
           "type": "string",
-          "pattern": "^[a-z]{2}(-[A-Z]{2})?$"
+          "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+          "description": "BCP 47 language tag. 推断自用户请求语言，除非用户明确指定其他语言。"
         },
         "timezone": {
           "type": "string"
@@ -46,19 +47,9 @@
         }
       }
     },
-    "theme": {
-      "type": "string",
-      "description": "Theme reference (generated pipeline uses tokens, not this directly)"
-    },
     "output_dir": {
       "type": "string",
       "default": "public"
-    },
-    "per_page": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 100,
-      "default": 10
     },
     "pages": {
       "type": "array",
@@ -66,10 +57,11 @@
         "type": "string"
       },
       "minItems": 1,
-      "description": "Enabled content types in nav order"
+      "description": "启用的内容类型（按 nav 顺序）。仅表示内容类型启用/排序，**导航表现由 template-manifest.json + 模板决定**。"
     },
     "nav": {
       "type": "object",
+      "description": "导航元数据。基础信息由 config 提供，模板可自由组合更多导航元素。",
       "properties": {
         "home_title": {
           "type": "string",
@@ -106,30 +98,6 @@
   },
   "additionalProperties": {
     "type": "object",
-    "description": "Per-content-type overrides (generated dynamically based on content-types.json)",
-    "properties": {
-      "layout": {
-        "type": "string",
-        "enum": [
-          "list",
-          "grid",
-          "masonry"
-        ]
-      },
-      "show_excerpt": {
-        "type": "boolean"
-      },
-      "excerpt_length": {
-        "type": "integer",
-        "minimum": 50,
-        "maximum": 500
-      },
-      "show_cover": {
-        "type": "boolean"
-      },
-      "content_file": {
-        "type": "string"
-      }
-    }
+    "description": "每内容类型覆盖项。大部分字段已废弃，仅保留向后兼容字段。"
   }
 }

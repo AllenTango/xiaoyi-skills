@@ -35,8 +35,6 @@ Install from a local checkout:
 npx skills add /absolute/path/to/xiaoyi-skills --skill xiaoyi-ssg
 ```
 
-On Windows, prefer an absolute path such as `D:\AICodeProjects\xiaoyi-skills`; relative paths like `.\xiaoyi-skills` may be interpreted as a repository name by the CLI.
-
 ## Validate
 
 List discoverable skills without installing:
@@ -44,11 +42,4 @@ List discoverable skills without installing:
 ```bash
 npx skills add AllenTango/xiaoyi-skills --list
 npx skills add /absolute/path/to/xiaoyi-skills --list
-```
-
-Run the Codex skill validator locally:
-
-```bash
-PYTHONUTF8=1 python path/to/quick_validate.py ./xiaoyi-ssg
-PYTHONUTF8=1 python path/to/quick_validate.py ./xiaoyi-wsman
 ```

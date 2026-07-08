@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Template Manifest Schema",
+  "type": "object",
+  "required": ["version", "collections", "templates"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Manifest schema version"
+    },
+    "collections": {
+      "type": "object",
+      "description": "Content collections sourced from source/_*/",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["source"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Relative path from site root, e.g., 'source/_posts'"
+          },
+          "sort": {
+            "type": "object",
+            "properties": {
+              "field": { "type": "string", "default": "date" },
+              "order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "perPage": { "type": "integer", "minimum": 1, "maximum": 100 },
+              "path": { "type": "string", "description": "Output path template with {n} placeholder, e.g., '/blog/page/{n}/'" }
+            },
+            "required": ["perPage", "path"]
+          },
+          "singleton": {
+            "type": "boolean",
+            "default": false,
+            "description": "Only use first item, render single page"
+          },
+          "tree": {
+            "type": "boolean",
+            "default": false,
+            "description": "Build tree structure from nav_order/parent fields for sidebar navigation"
+          }
+        }
+      }
+    },
+    "templates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "file"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique template identifier"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["layout", "page"],
+            "description": "layout = base template with body slot; page = renders to output"
+          },
+          "layout": {
+            "type": "string",
+            "description": "Layout template name (required for type=page)"
+          },
+          "file": {
+            "type": "string",
+            "description": "Template filename in templates/ directory"
+          },
+          "output": {
+            "type": "string",
+            "description": "Output path template. Supports placeholders: {collection}, {slug}, {n}, {lang}, {date:YYYY}, etc."
+          },
+          "data": {
+            "type": "object",
+            "description": "Static data bindings for this template"
+          },
+          "forEach": {
+            "type": "string",
+            "enum": ["collections", "items", "pagination"],
+            "description": "Expansion strategy: per collection / per item / per pagination page"
+          },
+          "lang": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "If set, expand for each language code (adds {lang} placeholder)"
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "const": "page" } } },
+            "then": { "required": ["layout", "output"] }
+          }
+        ]
+      }
+    },
+    "globals": {
+      "type": "object",
+      "description": "Global data available to all templates",
+      "properties": {
+        "site": { "type": "string", "default": "config.site" },
+        "nav": { "type": "string", "default": "computed.nav" },
+        "tokens": { "type": "string", "default": "designTokens" }
+      }
+    }
+  }
+}

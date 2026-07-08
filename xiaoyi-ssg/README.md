@@ -1,6 +1,7 @@
 # xiaoyi-ssg
 
-[![skills.sh](https://skills.sh/b/AllenTango/xiaoyi-skills)](https://skills.sh/AllenTango/xiaoyi-skills)
+[![skills.sh](https://skills.sh/b/AllenTango/xiaoyi-skills)](https://skills.sh/b/AllenTango/xiaoyi-skills)
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 
 ![xiaoyi-ssg visual identity](assets/xiaoyi-ssg-identity.png)
 
@@ -23,36 +24,8 @@ AI-driven static site generator that creates a **custom rendering pipeline for e
 
 ## Installation
 
-### Via skills CLI (recommended)
-
 ```bash
-# Install the skill for your AI agent
 npx skills add AllenTango/xiaoyi-skills --skill xiaoyi-ssg
-
-# Global install (available across all projects)
-npx skills add AllenTango/xiaoyi-skills --skill xiaoyi-ssg -g
-
-# Install to specific agents
-npx skills add AllenTango/xiaoyi-skills --skill xiaoyi-ssg -a opencode -a claude-code
-
-# Use the latest CLI explicitly
-npx skills@latest add AllenTango/xiaoyi-skills --skill xiaoyi-ssg
-```
-
-To install from a local checkout, use an absolute path:
-
-```bash
-npx skills add /absolute/path/to/xiaoyi-skills --skill xiaoyi-ssg
-```
-
-On Windows, prefer an absolute path such as `D:\AICodeProjects\xiaoyi-skills`; relative paths like `.\xiaoyi-skills` may be interpreted as a repository name by the CLI.
-
-### Manual
-
-```bash
-# Clone the package, then install this skill through the skills CLI
-git clone git@github.com:AllenTango/xiaoyi-skills.git
-npx skills add /absolute/path/to/xiaoyi-skills --skill xiaoyi-ssg
 ```
 
 ## Quick Start
@@ -148,24 +121,22 @@ my-site/
 │   ├── _media/                     # User-managed media files
 │   └── _<your-type>/               # Any custom types you define
 ├── .xiaoyi-ssg/                    # Generated pipeline source; commit it, ignore node_modules
-│   ├── render.js                   # Core renderer (Node.js ESM)
+│   ├── render.js                   # Core renderer (Node.js ESM, manifest-driven)
 │   ├── dev.js                      # Dev server (watch + serve + live reload via SSE)
 │   ├── package.json                # Dependencies (js-yaml, marked, chokidar, eta)
 │   ├── package-lock.json           # Lockfile
 │   ├── node_modules/               # Pipeline dependencies (gitignored)
-│   ├── templates/                  # Project-specific templates (Eta engine)
+│   ├── templates/                  # Project-specific templates (manifest-declared)
 │   │   ├── base.html               # Layout skeleton: header + main + footer
-│   │   ├── list-<type>.html        # List page template (pagination, card grid)
-│   │   ├── detail-<type>.html      # Detail page template (prev/next, full content)
-│   │   ├── page.html               # Generic page template
-│   │   └── index.html              # Home page template
+│   │   └── *.html                  # Per template-manifest.json declaration
 │   ├── assets/
 │   │   ├── style.css               # Complete CSS (with Critical CSS markers)
 │   │   ├── script.js               # Interaction bootstrap
 │   │   ├── interactions/           # Optional modules for search, filters, gallery, forms, charts, etc.
 │   │   └── data/                   # Optional static JSON payloads
+│   ├── template-manifest.json      # Single source of truth: collections, templates, globals
 │   ├── config.schema.json          # Config validation schema
-│   ├── content-types.json          # Content type definitions (copy for renderer)
+│   ├── content-types.json          # Content type definitions (data structure)
 │   ├── interactions.manifest.json  # Interaction contract and generated modules
 │   └── pipeline-manifest.json      # Pipeline metadata (generation time, refs, hashes)
 └── public/                         # Generated output (deploy this)

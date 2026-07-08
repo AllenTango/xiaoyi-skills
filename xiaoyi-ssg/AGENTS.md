@@ -1,5 +1,7 @@
 # AGENTS.md — xiaoyi-ssg 开发指导
 
+> **当前版本**：v1.0.0
+
 本文件用于开发/维护 `xiaoyi-ssg` skill（位于 `<SKILL_DIR>`）时的 AI 协作约定。**它不是生成站点的指导**（生成站点的指导在生成的渲染管线中）。
 
 ## 路径约定
@@ -305,10 +307,7 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
         "cover": { "type": "string", "required": false },
         "excerpt": { "type": "string", "required": false },
         "draft": { "type": "boolean", "default": false }
-      },
-      "list_template": "list-post.html",
-      "detail_template": "detail-post.html",
-      "per_page": 10
+      }
     },
     "project": {
       "label": "项目",
@@ -322,10 +321,7 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
         "live_url": { "type": "url", "required": false },
         "description": { "type": "string", "required": true },
         "featured": { "type": "boolean", "default": false }
-      },
-      "list_template": "list-project.html",
-      "detail_template": "detail-project.html",
-      "per_page": 12
+      }
     }
   },
   "nav_order": ["post", "project", "about"]
@@ -333,6 +329,10 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 ```
 
 **字段类型**：`string`, `datetime`, `date`, `boolean`, `string[]`, `url`, `number`, `object`。
+
+> - 模板选择 → `template-manifest.json` 的 `templates[]`
+> - 分页 → `manifest.collections[].pagination`
+> - 单例页 → `manifest.collections[].singleton`
 
 ---
 
@@ -435,20 +435,18 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 ├── package.json              # 依赖声明（js-yaml, marked, chokidar, eta）
 ├── package-lock.json         # 依赖锁定（npm install 生成）
 ├── node_modules/             # 管线依赖（git 忽略）
-├── templates/                # 该项目专用模板（Eta 引擎）
-│   ├── base.html             # 布局骨架：header + main + footer
-│   ├── list-<type>.html      # 列表页模板（含 pagination、card grid）
-│   ├── detail-<type>.html    # 详情页模板（含 prev/next、完整内容）
-│   ├── page.html             # 通用页面模板
-│   └── index.html            # 首页模板（聚合或重定向）
+├── templates/                # 该项目专用模板（清单驱动，无固定模板集）
+│   ├── base.html             # 布局骨架（layout 类型，由 manifest 引用）
+│   └── *.html                # 由 template-manifest.json 声明的每个 page 模板
 ├── assets/
 │   ├── style.css             # 完整 CSS（含 Critical CSS 注释标记）
 │   ├── script.js             # 交互入口（移动端菜单、搜索、筛选、灯箱等）
 │   ├── interactions/         # 可选交互模块
 │   └── data/                 # 可选静态 JSON 数据
+├── template-manifest.json    # 单一事实来源：声明 collections、templates、globals
 ├── interactions.manifest.json # 交互契约、依赖、fallback、验证点
-├── config.schema.json        # 配置校验 schema（从模板裁剪）
-├── content-types.json        # 内容类型定义（副本，供渲染脚本校验）
+├── config.schema.json        # 配置校验 schema
+├── content-types.json        # 内容类型定义（数据结构）
 └── pipeline-manifest.json    # 管线元数据
 ```
 
@@ -485,12 +483,12 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
   "content_types_hash": "sha256:...",
   "templates": [
     "base.html",
-    "list-post.html",
-    "detail-post.html",
-    "page.html",
-    "index.html"
+    "base.html",
+    "landing.html",
+    "list.html",
+    "detail.html"
   ],
-  "renderer_version": "2.0",
+  "renderer_version": "3.0",
   "runtime": "node"
 }
 ```
@@ -544,7 +542,7 @@ const eta = new Eta({
 
 const fresh = process.argv.includes('--fresh');
 
-// ... 主流程：scanContent → buildNav/Pagination/PrevNext → renderAllPages → copyAssets → generateFeeds/Sitemap/404 → saveCache → printSummary
+// ... 主流程：loadManifest → scanCollections → expandTemplates → render tasks → copyAssets → generateExtras → saveCache → printSummary
 ```
 
 ### dev.js 核心
@@ -632,21 +630,22 @@ const data = {
 {
   "version": 1,
   "outputs": {
-    "public/blog/hello-world/index.html": {
+    "/blog/hello-world/": {
       "hash": "sha256:...",
       "inputs": [
         "source/_posts/2025-01-15-hello-world.md",
-        ".xiaoyi-ssg/templates/detail-post.html",
-        ".xiaoyi-ssg/templates/base.html"
+        ".xiaoyi-ssg/templates/detail.html",
+        ".xiaoyi-ssg/templates/base.html",
+        ".xiaoyi-ssg/template-manifest.json"
       ],
-      "template_names": ["detail-post", "base"]
+      "template_names": ["detail", "base"]
     }
   }
 }
 ```
 
 **算法**：
-- 对每个输出文件，计算输入哈希：内容文件 + 使用的模板文件 + tokens + config 关键字段 + interactions manifest + 交互模块 + 数据文件 + 样式/脚本 → SHA256（`crypto.createHash`）
+- 对每个输出路径，计算输入哈希：内容文件 + 使用的模板文件 + tokens + config 关键字段 + **template-manifest.json** + interactions manifest + 交互模块 + 数据文件 + 样式/脚本 → SHA256（`crypto.createHash`）
 - 若哈希匹配缓存且非 `--fresh` → **跳过渲染**，直接复用 `public/` 现有文件
 - `--fresh`：忽略缓存，强制重新渲染所有页面
 - 单页构建（隐式）：只处理变更内容关联的输出，其余复用

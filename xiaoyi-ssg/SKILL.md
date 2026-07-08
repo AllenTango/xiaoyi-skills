@@ -1,5 +1,6 @@
 ---
 name: xiaoyi-ssg
+version: 1.0.0
 description: Use only when the user explicitly invokes /xiaoyi-ssg, names xiaoyi-ssg, or asks to create/maintain a xiaoyi static-site project. Generates and maintains a project-specific static-site pipeline with content models, design tokens, accessible UI, and static-host-compatible browser interactions such as navigation, search, filters, theme toggles, forms, galleries, media controls, charts, or maps.
 ---
 
@@ -50,14 +51,15 @@ Generated sites should follow this layout:
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── node_modules/
-│   ├── render.js
-│   ├── dev.js
-│   ├── templates/
+│   ├── render.js              # 核心渲染（manifest 驱动，< 150 行主循环）
+│   ├── dev.js                 # 开发服务器（manifest 监听）
+│   ├── templates/             # 由 template-manifest.json 声明的清单
 │   ├── assets/
 │   │   ├── style.css
 │   │   ├── script.js
 │   │   ├── interactions/
 │   │   └── data/
+│   ├── template-manifest.json # 单一事实来源：collections、templates、globals
 │   ├── content-types.json
 │   ├── interactions.manifest.json
 │   └── pipeline-manifest.json
@@ -68,16 +70,16 @@ Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `publ
 
 ## Intent Routing
 
-- **init / new site**: guide site creation, content types, design direction, then read `prompts/content-type-definition.md`, `prompts/design-system-extraction.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
-- **style/theme/reference change**: preserve `source/`; update design tokens and regenerate only the pipeline. Read `prompts/reference-analysis.md` if a reference URL/screenshot is involved, then `prompts/design-system-extraction.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
-- **content type add/change**: read `prompts/content-type-definition.md`; update `.xiaoyi-ssg/content-types.json`; create only missing `source/_<type>/` directories; then regenerate list/detail pipeline files.
+- **init / new site**: guide site creation, content types, design direction, then read `prompts/content-type-definition.md`, `prompts/template-manifest-generation.md`, `prompts/design-system-extraction.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
+- **style/theme/reference change**: preserve `source/`; update design tokens and regenerate only the pipeline. Read `prompts/reference-analysis.md` if a reference URL/screenshot is involved, then `prompts/design-system-extraction.md`, `prompts/template-manifest-generation.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
+- **content type add/change**: read `prompts/content-type-definition.md`; update `.xiaoyi-ssg/content-types.json` and `.xiaoyi-ssg/template-manifest.json` (add/extend collection); create only missing `source/_<type>/` directories.
 - **interaction add/change**: preserve `source/`; update templates/assets/interactions/data/manifest as needed. Read `prompts/pipeline-generation.md` and `prompts/render-node-spec.md`.
 - **new content**: create one content file under the matching `source/_<type>/`; do not regenerate the pipeline unless the content model changed.
 - **content edit**: edit only the confirmed content file.
 - **build**: run from `<SITE_ROOT>` with `node .xiaoyi-ssg/render.js`, or from `<PIPELINE_DIR>` with `npm run build`.
 - **dev**: run from `<SITE_ROOT>` with `node .xiaoyi-ssg/dev.js`, or from `<PIPELINE_DIR>` with `npm run dev`.
 - **preview**: use `node .xiaoyi-ssg/dev.js` (includes live reload) or open `public/index.html` directly.
-- **diagnose**: inspect config, tokens, content types, source frontmatter, pipeline files, and build output. Do not modify files unless the user asks for fixes.
+- **diagnose**: inspect config, tokens, content types, manifest, source frontmatter, pipeline files, and build output. Do not modify files unless the user asks for fixes.
 
 ## Pipeline Rules
 
@@ -126,6 +128,5 @@ Preferred separator CSS:
 After changing this skill:
 
 ```bash
-PYTHONUTF8=1 python path/to/quick_validate.py ./xiaoyi-ssg
 npx skills add /absolute/path/to/xiaoyi-skills --list
 ```

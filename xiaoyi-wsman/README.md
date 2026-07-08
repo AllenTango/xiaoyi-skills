@@ -1,22 +1,14 @@
 # xiaoyi-wsman
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/AllenTango/xiaoyi-skills)
+
 Workspace 项目管理 —— 让 AI 清晰掌握工作区每个项目的状态、进度、调整落实情况与审核测试结果。
 
 ## 安装
 
 ```bash
-git clone https://github.com/AllenTango/skills ~/skills-repo
+npx skills add AllenTango/xiaoyi-skills --skill xiaoyi-wsman
 ```
-
-把 `xiaoyi-wsman/` 链接（或复制）到你的 AI 工具的 skills 目录，重启客户端即可：
-
-```bash
-ln -s ~/skills-repo/skills/xiaoyi-wsman ~/.opencode/skills/xiaoyi-wsman
-ln -s ~/skills-repo/skills/xiaoyi-wsman ~/.claude/skills/xiaoyi-wsman
-ln -s ~/skills-repo/skills/xiaoyi-wsman ~/.codex/skills/xiaoyi-wsman
-# 其它加载 SKILL.md 的平台同理
-```
-
 
 ## 使用
 
@@ -65,11 +57,10 @@ idea → in-progress → review → done
 ## 脚本
 
 ```bash
-# bash
-bash <skill>/scripts/xiaoyi-wsman-scan.sh "$WS_ROOT" [--json|--issues-only]
-
-# PowerShell
-pwsh <skill>/scripts/xiaoyi-wsman-scan.ps1 "$WS_ROOT" [-Json|-IssuesOnly]
+node <skill>/scripts/xiaoyi-wsman-scan.js "$WS_ROOT" [--json|--issues-only]
 ```
+
+要求 **Node.js 18+**（`npx skills add` 安装本 skill 时已要求 Node.js，AI 客户端必定具备）。
+无需 `npm install`，无外部依赖。
 
 环境变量 `WSMAN_STALE_DAYS` 调整陈旧阈值（默认 30 天）。

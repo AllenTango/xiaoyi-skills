@@ -10,7 +10,7 @@ tested: false
 # {{PROJECT_NAME}} — 状态
 
 > 本文件是该项目状态的**唯一信息源（single source of truth）**。
-> AI 每次在本项目完成实质性工作后，必须回写本文件。frontmatter 字段供 `xiaoyi-wsman-scan.sh` 机读，请保持准确。
+> AI 每次在本项目完成实质性工作后，必须回写本文件。frontmatter 字段供 `xiaoyi-wsman-scan.js` 机读，请保持准确。
 
 ## 当前阶段
 
