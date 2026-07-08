@@ -83,15 +83,41 @@ Echo the new absolute path and write `state.json`. See "Workspace Root" above.
 ## Scanner Reference
 
 ```bash
-node <SKILL_DIR>/scripts/xiaoyi-wsman-scan.js [WORKSPACE_ROOT] [--json] [--issues-only]
+node <SKILL_DIR>/scripts/xiaoyi-wsman-scan.js [WORKSPACE_ROOT] [--json] [--issues-only] [--show-ignored]
 ```
 
 - `WORKSPACE_ROOT` defaults to the current directory.
 - `--json` outputs a JSON array of `{name, stage, progress, last_updated, reviewed, tested, git, issues}`.
 - `--issues-only` filters to projects with at least one issue.
+- `--show-ignored` appends a list of skipped directories with the reason and matching rule.
 - `WSMAN_STALE_DAYS` (default 30) sets the staleness threshold.
 
 The scanner detects: missing files, invalid stage, `done` projects with `reviewed`/`tested` not true, `done` projects with dirty git, stale `STATUS.md`, and git-dirty projects with stale status.
+
+## Ignoring Subdirectories
+
+The scanner skips subdirectories that are not real projects. Three layers of filtering apply, in order:
+
+1. **Hidden directories** (names starting with `.`) — always skipped.
+2. **Built-in defaults** — these directory names are always skipped without configuration:
+   `node_modules`, `.git`, `.next`, `dist`, `build`, `.cache`, `.venv`, `venv`, `__pycache__`, `.DS_Store`, `target`, `Pods`, `.gradle`, `.idea`, `.vscode`.
+3. **User-configured ignore list** — create `<WORKSPACE_ROOT>/.xiaoyi-wsman.config.json`:
+
+   ```json
+   {
+     "ignore": ["junk-*", "scripts/", "**/playground"]
+   }
+   ```
+
+   Pattern syntax:
+   - `*` matches any chars except `/` within one segment (e.g. `junk-*` matches `junk-build` but not `junk/nested`).
+   - `**` matches across segments (e.g. `**/playground` matches `playground`, `a/playground`, `a/b/playground`).
+   - Trailing `/` or `/**` switches to **prefix match**: the pattern is treated as a directory prefix and any descendant is skipped. E.g. `scripts/` matches `scripts` and `scripts/dev/anything`.
+   - `?` matches a single character (e.g. `pro?ect` matches `project` and `prosect`).
+
+   Invalid patterns are skipped with a warning; the scan continues.
+
+Use `--show-ignored` to verify what is being skipped and why during development.
 
 ## Truthfulness
 

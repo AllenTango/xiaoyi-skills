@@ -1,5 +1,10 @@
 # Pipeline Generation Prompt
 
+> ⚠️ **必读前置**：
+> 1. [`templates/conventions.md`](../templates/conventions.md) — 模板语法、变量绑定、custom fields 强制约定
+> 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — render.js 完整规格
+> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — `assets/style.css` 的 design token、card/hero/nav、dark mode、a11y 模板代码（生成 CSS 时直接照搬）
+
 指导 AI 生成完整渲染管线（`.xiaoyi-ssg/` 目录下所有文件）。
 
 ## 输入上下文

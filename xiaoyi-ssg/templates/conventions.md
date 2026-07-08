@@ -1,0 +1,197 @@
+# Template Conventions for xiaoyi-ssg Pipelines
+
+> ⚠️ **Mandatory reading for any AI generating a pipeline via `/xiaoyi-ssg`.**
+> Non-compliance produces pipelines that look correct but render empty pages.
+
+This file is the single source of truth for template syntax, data shape, and variable binding rules used by the auto-generated render pipeline. Following it prevents the most common pitfalls observed in early xiaoyi-ssg tests.
+
+---
+
+## 1. Templating engine
+
+The pipeline uses **Eta v3** for templates (`<% ... %>`, `<%= ... %>`, `<%~ ... %>`). Eta is **not** Nunjucks, EJS, or Jinja2. Common confusion:
+
+| Feature              | Eta                              | EJS / Nunjucks | Notes                  |
+| -------------------- | -------------------------------- | -------------- | ---------------------- |
+| Output escaped       | `<%= value %>`                   | `<%= value %>` | Same                   |
+| Output raw           | `<%~ value %>`                   | `<%- value %>` | **Different!**         |
+| If                   | `<% if (cond) { %>`              | `<% if (cond) %>` | Eta requires braces for blocks |
+| For                  | `<% for (const x of arr) { %>`   | similar        | Always block-scoped    |
+| Variable scope       | top-level data access (no `it.`) | often `it.x`   | See §3 below           |
+
+### 1.1 Raw output in layout
+
+The base layout includes `<%~ body %>` to splice the rendered page template. **Do not** use `<%- body %>` — Eta does not recognize the `<%-` syntax and will silently output an empty string.
+
+```html
+<!-- base.html — correct -->
+<%~ body %>
+
+<!-- base.html — WRONG (Eta silently outputs nothing) -->
+<%- body %>
+```
+
+---
+
+## 2. Template variables: top-level only
+
+When Eta is configured with `useWith: true` (the pipeline's default), every variable in the data object is bound to the template's top scope. **Do not prefix with `it.`** — it will be treated as the literal property `it` on the data, which is undefined.
+
+```html
+<!-- correct -->
+<title><%= pageTitle || site.title %></title>
+<p><%= site.description %></p>
+<% for (const post of (recentPosts || [])) { %>
+  <a href="<%= post.url %>"><%= post.title %></a>
+<% } %>
+
+<!-- WRONG (silent empty) -->
+<title><%= it.pageTitle || it.site.title %></title>
+<% for (const post of (it.recentPosts || [])) { %>
+```
+
+If you really want an `it` alias (e.g. for nested templates), set it explicitly at the top of the template:
+
+```html
+<% const it = @raw %>
+```
+
+But this is rarely needed and discouraged.
+
+---
+
+## 3. Data shape passed to page templates
+
+The render pipeline builds the data object for each page template as follows:
+
+```js
+data = {
+  ...globals,        // site, nav, recentPosts/recentProjects, allPostsUrl, body, ...
+  ...task.data,      // collection, col, item (for detail), page (for page type), pagination, ...
+  pageTitle,         // derived from item.title + site.title
+  pageDescription,   // derived from item.excerpt or site.description
+}
+```
+
+### 3.1 Inside `for` loops — access fields directly on the loop variable
+
+Eta iterates a JS array and binds each element to the loop variable. Inside the loop body, use that variable:
+
+```html
+<% for (const post of recentPosts) { %>
+  <h2><%= post.title %></h2>
+  <time><%= post.dateDisplay %></time>
+  <% for (const tag of post.tags) { %>
+    <span class="tag">#<%= tag %></span>
+  <% } %>
+<% } %>
+```
+
+### 3.2 Custom fields are flattened to top level on each item
+
+For every parsed Markdown file, the front-matter is **merged into the item object at top level**, not just stored in `customFields`. So `data.year`, `data.tech_stack`, `data.demo_url` etc. are accessible directly as `item.year`, `item.tech_stack`, `item.demo_url`.
+
+```yaml
+---
+title: "Next.js SaaS Starter"
+year: 2026
+tech_stack: [Next.js, TypeScript, Prisma]
+demo_url: "https://..."
+---
+```
+
+```html
+<% for (const project of recentProjects) { %>
+  <h3><%= project.title %></h3>
+  <span class="year"><%= project.year %></span>
+  <p><%= project.description %></p>
+  <% for (const t of project.tech_stack) { %>
+    <span class="chip"><%= t %></span>
+  <% } %>
+<% if (project.demo_url) { %>
+  <a href="<%= project.demo_url %>">Demo</a>
+<% } %>
+<% } %>
+```
+
+The raw `customFields` object is also exposed for advanced cases (e.g. dynamic field lookups), but prefer direct access.
+
+---
+
+## 4. Collection name binding
+
+For list templates, the render pipeline passes both `collection` (string) and `col` (object containing items and pagination). Either is usable:
+
+```html
+<% const items = (col && col.items) || []; %>
+<% const name = collection; %>
+```
+
+For the breadcrumb / page-title to read the friendly collection name, the data also exposes `collectionName` (mirrored from `collection`). Use it in copy:
+
+```html
+<h1><%= collectionName === 'post' ? '日誌' : collectionName %></h1>
+```
+
+---
+
+## 5. Required template files
+
+A complete pipeline must define these in `template-manifest.json`:
+
+| Template name | Purpose                                  | Output path             | Notes                                |
+| ------------- | ---------------------------------------- | ----------------------- | ------------------------------------ |
+| `base`        | Layout wrapper (HTML shell + nav/footer) | (layout only)           | Contains `<%~ body %>`               |
+| `index`       | Homepage                                 | `/`                     | Uses `recentPosts`/`recentProjects`  |
+| `<col>-list`  | One per collection                       | `/<col>/`               | Iterates `col.items`                 |
+| `<col>-detail`| One per collection                       | `/<col>/{slug}/`        | Iterates single item, sets `forEach: items` |
+| `page-detail` | Singleton pages                          | `/{slug}/`              | Iterates `page` collection items     |
+| `404`         | Not found                                 | `/404.html`             | `data.kind === '404'`                |
+
+---
+
+## 6. Style integration with frontend-design
+
+When generating `assets/style.css`, leverage design tokens from `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json`. Common token groupings:
+
+| Token group | Example fields | CSS variables to emit |
+| ----------- | -------------- | --------------------- |
+| `color`     | `bg`, `fg`, `accent`, `border` | `--color-bg`, `--color-fg`, `--color-accent`, `--color-border` |
+| `typography` | `font-sans`, `font-mono`, `base-size`, `line-height` | `--font-sans`, `--font-mono`, `--text-base`, `--leading-normal` |
+| `layout`    | `container`, `radius` | `--container-max`, `--radius-base` |
+| `motion`    | `duration-fast`, `duration-base` | `--motion-fast`, `--motion-base` |
+
+For richer component styling (cards, hero, nav, post lists), consult the **frontend-design** skill which provides curated component patterns and accessibility tokens. Reference it from `prompts/pipeline-generation.md` so the AI generating the CSS knows to load it as auxiliary context.
+
+---
+
+## 7. Self-test after generation
+
+After generating a pipeline, run the following smoke tests before declaring success:
+
+1. `node .xiaoyi-ssg/render.js --fresh` exits with `build done` and a non-zero `rendered=` count.
+2. `grep -l '<html' public/index.html` matches.
+3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` is 1 (raw body not escaped).
+4. `grep -c 'recentPosts\|recentProjects' .xiaoyi-ssg/templates/index.html` is at least 1 (index uses recent items).
+5. The content collection count in `public/<col>/` matches the number of source files in `source/_<col>/`.
+
+If any check fails, do not claim the pipeline works.
+
+---
+
+## 8. Anti-patterns to avoid
+
+- ❌ `<%- body %>` in `base.html` — outputs empty
+- ❌ `it.xxx` in any template — `it` is not bound by default
+- ❌ `recentPosts` in render.js globals but `recentProjects` referenced in template — naming mismatch
+- ❌ Hardcoding `collections.post` in `render.js` — breaks any non-post collection
+- ❌ Hardcoding `contentTypes.types[name]` — manifest uses `collections` key, types and collections are different concepts
+- ❌ Setting `<% const it = data %>` then using `it.customFields.xxx` in a loop — verbose and brittle; flatten custom fields at scan time instead (see §3.2)
+
+---
+
+## 9. When in doubt
+
+- Look at `references/lark_cli_dashboard.md` in the `feishu-doc-sync` skill — it follows similar principles (deterministic API → render).
+- Look at any well-formed xiaoyi-ssg site under `~/temp/ssg-demo*` for working examples after `node .xiaoyi-ssg/render.js --fresh`.
+- When the AI generates a pipeline that renders empty pages, **the data-binding section (§3) is the first place to check** — 80% of the time it's an `it.` prefix or `<%-` instead of `<%~`.

@@ -62,7 +62,7 @@
 |------|------|
 | `collections` | 内容集合定义，键=集合名，值=源路径、排序、分页、singleton、tree 等 |
 | `templates[]` | 模板定义数组 |
-| `templates[].type` | `"layout"`（布局模板，含 `<%- body %>` 插槽）或 `"page"`（渲染输出页面） |
+| `templates[].type` | `"layout"`（布局模板，含 `<%~ body %>` 插槽）或 `"page"`（渲染输出页面） |
 | `templates[].forEach` | 展开策略：`"collections"`（每集合一份）、`"items"`（每内容项一份）、`"pagination"`（每分页一份）、省略=单次 |
 | `templates[].output` | 输出路径模板，支持占位符：`{collection}`、`{slug}`、`{n}`（页码）、`{lang}`、`{date:YYYY}` 等 |
 | `templates[].lang` | 可选，语言代码数组，展开时注入 `{lang}` 占位符 |
@@ -73,6 +73,8 @@
 ---
 
 ## render.js — 核心渲染脚本
+
+> ⚠️ **必读**：所有 AI 生成 render.js 前必须先读 [`templates/conventions.md`](../templates/conventions.md)。其中定义了模板语法（Eta `<%~` 而非 `<%-`）、变量绑定（top-level 而非 `it.`）、custom fields 攤平规则等强制约定。不遵守将产出空页面 pipeline。
 
 ### 总体流程
 
@@ -140,9 +142,13 @@ async function build(fresh = false) {
 #### `scanCollections(manifest, contentTypes)`
 - 遍历 `manifest.collections`，读取各 `source` 目录下 `.md` 文件
 - 解析 front-matter，校验必需字段（参考 `contentTypes.types[collectionName].fields`）
+  - **兼容写法**：content-types.json 的 schema 可用 `types` 或 `collections` 键（render.js 优先读 `types`，缺失则读 `collections`）
 - 生成标准化 item 对象：
   ```js
-  { collection, slug, title, date, dateDisplay, tags, categories, cover, excerpt, bodyHtml, draft, navOrder, parent, customFields }
+  { collection, slug, title, date, dateDisplay, tags, categories, cover, excerpt, bodyHtml, draft, navOrder, parent, customFields,
+    // 自定义字段从 front-matter 攤平到顶层（templates 用 item.year 而非 item.customFields.year）
+    ...data
+  }
   ```
 - 按 `sort.field` / `sort.order` 排序
 - 预计算 `pagination`（若定义）：`{ perPage, totalPages, path }`
@@ -212,9 +218,37 @@ hash = sha256(
 
 #### `renderWithLayout(eta, layoutName, templateName, data)`
 ```js
-const body = eta.render(templateName, data);
-return eta.render(layoutName, { ...data, body });
+const dataWithExtras = { ...data, collectionName: data.collection || data.collectionName };
+const body = eta.render(templateName, dataWithExtras);
+return eta.render(layoutName, { ...dataWithExtras, body });
 ```
+- **注意**：Eta 默认 `useWith: true`，layout 中 body 拼接必须用 `<%~ body %>`（不要用 `<%- body %>`，会输出空字符串）。
+- 模板中访问字段时直接 top-level（`<%= site.title %>`），不要加 `it.` 前缀（`<%= it.site.title %>` 会失败）。
+- `collectionName` 兼容：`data.collection` 自动暴露为 `collectionName`，便于模板统一处理「'post' → '日誌'」类映射。
+
+### 通用 globals（首页用）
+
+首页模板需要「最近 N 条」+ 「所有 X 链接」。Render.js 在所有 collection 中找第一个非 `page` 的 collection 作为 `primaryCollection`：
+
+```js
+const primaryColName = Object.keys(collections).find(k => k !== 'page') || 'post';
+globals.recentItems = (collections[primaryColName]?.items || []).slice(0, 5);
+globals.allItemsUrl = `/${primaryColName}/`;
+```
+
+模板统一用 `recentItems` 和 `allItemsUrl`，避免为每种 content type 写不同的全局名（如 `recentPosts` / `recentProjects`）。如果想用旧名，模板顶部可加 `<% const recentPosts = recentItems %>` 兼容。
+
+### 必做自测（生成后跑）
+
+AI 生成完 pipeline 后，**必须跑以下 5 步检查**才能声明成功：
+
+1. `node .xiaoyi-ssg/render.js --fresh` → 退出码 0，输出 `build done · rendered=N cached=0 files=... · Nms`
+2. `grep -l '<html' public/index.html` → 命中
+3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` → 至少 1（确认 layout 用 raw body）
+4. `grep -cE 'recentItems|recentPosts' .xiaoyi-ssg/templates/index.html` → 至少 1（首页用 recent items）
+5. `find source/_* -name '*.md' | wc -l` == `find public -name 'index.html' | wc -l - 3`（3 = feed/sitemap/404 例外）
+
+任一不通过即视为 pipeline 失败，必须回头修，不能宣称"差不多 work"。
 
 ---
 

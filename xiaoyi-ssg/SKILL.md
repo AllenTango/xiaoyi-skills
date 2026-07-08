@@ -130,3 +130,21 @@ After changing this skill:
 ```bash
 npx skills add /absolute/path/to/xiaoyi-skills --list
 ```
+
+---
+
+## Common Pitfalls (learned from real tests)
+
+When a generated pipeline renders empty pages, check these first:
+
+1. **Empty `<main>` after first build** — 90% of the time it's the base layout. Must be `<%~ body %>`, not `<%- body %>` (Eta does not recognize `<%-`).
+2. **List/index template renders nothing** — templates are using `it.col` or `it.recentPosts`. Eta with `useWith: true` does NOT bind `it`. Use top-level variables: `<%= col %>`, `<%= recentPosts %>`.
+3. **Custom fields like `year`, `tech_stack` show `undefined`** — render.js's `scanCollections` must spread `...data` onto each item so `item.year` works without going through `item.customFields.year`. The spec requires this — confirm the generated `render.js` includes `...data` in the item builder.
+4. **`recentPosts is not defined`** — render.js's globals and template names must match. Use `recentItems` / `allItemsUrl` as generic globals; if you want `recentPosts` style, pick one and stick to it.
+5. **Hardcoded `collections.post` in render.js** — breaks any non-post collection. Replace with `Object.values(collections).flatMap(c => c.items)` or use the `primaryColName` lookup pattern.
+6. **`contentTypes.types[name]` undefined** — content-types.json may use `collections` key instead. render.js must read both: `(contentTypes.types || contentTypes.collections || {})[name]`.
+7. **Pipeline generation thinks it succeeded but pages are empty** — always run the 5 self-tests in `prompts/render-node-spec.md` (§ "必做自测"). If any fails, the pipeline is broken regardless of `node render.js` exit code.
+
+When debugging, compare against `~/temp/ssg-demo*/.xiaoyi-ssg/templates/base.html` — these are known-good examples after fixing the above issues.
+
+For full conventions see `templates/conventions.md`.
