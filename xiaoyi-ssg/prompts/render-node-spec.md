@@ -250,6 +250,15 @@ AI 生成完 pipeline 后，**必须跑以下 5 步检查**才能声明成功：
 
 任一不通过即视为 pipeline 失败，必须回头修，不能宣称"差不多 work"。
 
+### 设计系统来源必检
+
+生成 `assets/style.css` 之前，AI 必须**先调用** Hermes 设计 skill 拿到真实 token：
+
+1. **必检 1**：生成的 `.xiaoyi-ssg-design-tokens.json` 必须含 `source_skill` 字段，指向实际调用的 skill（如 `popular-web-designs/stripe` 或 `claude-design`）。不允许为空或伪造。
+2. **必检 2**：`grep -c 'source_skill' <SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` ≥ 1。
+3. **必检 3**：如果用户指定了品牌（如「像 Stripe」），`source_skill` 必须以 `popular-web-designs/<brand>.md` 结尾。
+4. **必检 4**：CSS 字体栈必须直接源自 design skill 的 "Hermes Implementation Notes" 段（如 Inter / JetBrains Mono / Anthropic Serif 等），不允许 AI 重新设计。
+
 ---
 
 ## dev.js — 开发服务器

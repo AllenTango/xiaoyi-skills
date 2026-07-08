@@ -1,145 +1,74 @@
-# frontend-design Integration Notes for xiaoyi-ssg
+# Frontend Design — Dispatcher to Existing Hermes Skills
 
-> This file is a reference when generating the `assets/style.css` for an
-> xiaoyi-ssg pipeline. It distills the most relevant patterns from
-> frontend-design work into quick rules so a generated site looks credible
-> on day one.
+> ⚠️ **重要**：本 skill **不自製 CSS 模板或 design tokens**。所有前端設計決策委派給 Hermes 已安裝的設計 skill，以保證用戶的設計生態系統一致並避免重複勞動。
 
-## Color tokens → CSS variables
+## 已安裝的設計 skill（Hermes 內）
 
-Emit CSS custom properties at `:root` from `.xiaoyi-ssg-design-tokens.json`:
+當用戶通過 `/xiaoyi-ssg` 觸發 pipeline 生成時，**AI 必須根據下表選擇並 load 對應的 skill**：
 
-```css
-:root {
-  --color-bg: <color.bg>;
-  --color-bg-alt: <color.bg-alt or color.surface>;
-  --color-fg: <color.fg>;
-  --color-fg-muted: <color.fg-muted or color.text-muted>;
-  --color-accent: <color.accent>;
-  --color-border: <color.border>;
-  --font-sans: <typography.font-sans>;
-  --font-mono: <typography.font-mono>;
-  --text-base: <typography.base-size or "16px">;
-  --leading-normal: <typography.line-height or "1.6">;
-  --container-max: <layout.container>;
-  --radius-base: <layout.radius>;
-  --motion-fast: <motion.duration-fast>;
-  --motion-base: <motion.duration-base>;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    /* dark-mode overrides if dark_mode === true in tokens */
-  }
-}
+| 用戶需求 | 應 load 的 skill | 用途 |
+|---------|-----------------|------|
+| 「像 Stripe / Linear / Vercel 等已知品牌的視覺風格」 | `popular-web-designs` | 從 54 個真實設計系統（Stripe、Linear、Vercel、Notion、Anthropic、Apple、Airbnb 等）選一個，照搬完整 tokens |
+| 「原創設計 / 無特定品牌偏好 / 從零開始」 | `claude-design` | 提供設計 *process 與 taste*：scoping brief、生產 variants、驗證 local HTML、避免 AI slop |
+| 「要 DESIGN.md 規格文件（持久化的設計 token spec）」 | `design-md` | Google DESIGN.md 格式：YAML front-matter + Markdown 設計理念、WCAG 對比、Tailwind 導出 |
+| 「混合：要我先設計流程 + 最後要品牌風格」 | `claude-design` + `popular-web-designs` 兩個 load | claude-design 驅動流程，popular-web-designs 供應視覺詞彙 |
+
+54 個品牌完整清單：airbnb, airtable, apple, bmw, cal, claude, clay, clickhouse, cohere, coinbase, composio, cursor, elevenlabs, expo, figma, framer, hashicorp, ibm, intercom, kraken, linear.app, lovable, MiniMax, mintlify, miro, mistral.ai, mongodb, notion, nvidia, ollama, opencode.ai, pinterest, posthog, raycast, replicate, resend, revolut, runwayml, sanity, sentry, spacex, spotify, stripe, supabase, superhuman, together.ai, uber, vercel, voltagent, warp, webflow, wise, x.ai, zapier。
+
+## AI 生成 pipeline 時的強制流程
+
+1. **解析用戶意圖** —— 確定是否提到品牌名（「像 Stripe」/「Linear 風」/「Vercel style」）或要求原創設計。
+2. **load 對應的 design skill** —— 用 `skill_view` 加載。例如：
+   ```
+   skill_view(name="popular-web-designs", file_path="templates/stripe.md")
+   skill_view(name="claude-design")
+   skill_view(name="design-md")
+   ```
+3. **提取設計 token** —— 從加載的 skill 提取：
+   - 顏色（bg / fg / accent / border）
+   - 字體（font-family stack、字重、字號層級）
+   - spacing scale
+   - 圓角 / 陰影 / 動效 token
+   - 暗色 / 淺色主題（如支持）
+4. **寫入 `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json`** —— token 字段名遵守 popular-web-designs 該品牌的 schema：
+   ```json
+   {
+     "source_skill": "popular-web-designs/stripe",
+     "color": { "bg": "#ffffff", "fg": "#0a2540", "accent": "#635bff", ... },
+     "typography": { "font_sans": "...", "font_mono": "...", ... },
+     ...
+   }
+   ```
+   （source_skill 字段記錄 token 出處，方便日後追溯。）
+5. **生成 CSS** —— 用 popular-web-designs 的「Hermes Implementation Notes」中已提供的 CDN font link + font-family stack + 具體顏色值，**直接抄過去**而唔是自己重新設計。
+6. **可選：如用戶要 DESIGN.md 持久化** —— 額外調用 `design-md` skill 生成正式 spec 文件。
+
+## Fallback
+
+如果用戶明確說「沒有品牌偏好 / 你來設計」但又沒指定原創 skill：
+1. 加載 `claude-design` 走原創流程
+2. 若 `claude-design` 無法提供，立即 fallback 到 `popular-web-designs/templates/claude.md`（Anthropic Claude 設計系統，是 Hermes Agent 自身美學最貼近的風格，作為最後預設）
+
+## 用戶可選的 brand preference 字段
+
+若用戶在 config.yml 加上 `site.design.brand: "stripe"`，AI 應自動加載對應品牌模板而唔必對話再問：
+
+```yaml
+site:
+  design:
+    brand: "stripe"  # 可選；見 popular-web-designs/templates/ 完整列表
+    source_skill: "popular-web-designs"  # 或 claude-design / design-md
 ```
 
-## Layout primitives
+## 不允許做的事
 
-```css
-.container { max-width: var(--container-max); margin-inline: auto; padding-inline: 1.5rem; }
-.stack > * + * { margin-block-start: 1rem; }
-.stack-lg > * + * { margin-block-start: 2rem; }
-.flow > * + * { margin-block-start: var(--flow, 1rem); }
-.grid { display: grid; gap: 1.5rem; }
-@media (min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } .grid-3 { grid-template-columns: repeat(3, 1fr); } }
-```
+- ❌ 不在本 skill 內硬編碼任何 CSS / token / color 值
+- ❌ 不寫類似「font-family: Inter」的固定建議（除非來自用戶指定的 design skill）
+- ❌ 不繞過 design skills 直接讓 AI 自由發揮 CSS（會產生 generic「AI slop」設計）
+- ❌ 不複製 design skills 內的內容到本 skill（保持單一真相來源）
 
-## Hero / page-header
+## 何時更新本文件
 
-```css
-.hero { padding-block: 4rem; text-align: center; }
-.hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
-.hero p { color: var(--color-fg-muted); max-width: 60ch; margin-inline: auto; }
-```
-
-## Card grid (post / project / doc)
-
-```css
-.cards { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-.card { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: var(--radius-base); padding: 1.25rem; transition: transform var(--motion-fast); }
-.card:hover { transform: translateY(-2px); }
-.card-meta { font-size: 0.85rem; color: var(--color-fg-muted); }
-.card h2, .card h3 { margin-block: 0.4rem; }
-.tags { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; list-style: none; }
-.tag { font-size: 0.75rem; padding: 0.15rem 0.5rem; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-accent); }
-```
-
-## Header / nav / footer
-
-```css
-.site-header { padding-block: 1rem; border-bottom: 1px solid var(--color-border); position: sticky; top: 0; background: var(--color-bg); }
-.site-header .container { display: flex; align-items: center; justify-content: space-between; }
-.site-title { font-weight: 700; text-decoration: none; color: var(--color-fg); }
-.site-nav { display: flex; gap: 1.25rem; }
-.site-nav a { text-decoration: none; color: var(--color-fg-muted); }
-.site-nav a[aria-current="page"], .site-nav a.active { color: var(--color-fg); font-weight: 600; }
-.site-footer { padding-block: 2rem; border-top: 1px solid var(--color-border); color: var(--color-fg-muted); font-size: 0.875rem; text-align: center; }
-```
-
-## Article body (post detail / doc detail)
-
-```css
-.prose { max-width: 70ch; margin-inline: auto; line-height: var(--leading-normal); }
-.prose h2 { margin-block: 2rem 0.75rem; }
-.prose h3 { margin-block: 1.5rem 0.5rem; }
-.prose p { margin-block: 0 1rem; }
-.prose code { font-family: var(--font-mono); background: var(--color-bg-alt); padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.92em; }
-.prose pre { background: var(--color-bg-alt); padding: 1rem; border-radius: var(--radius-base); overflow-x: auto; }
-.prose pre code { background: none; padding: 0; }
-.prose a { color: var(--color-accent); }
-.prose ul, .prose ol { padding-inline-start: 1.5rem; margin-block: 0.5rem 1rem; }
-.prose li + li { margin-block-start: 0.25rem; }
-.prose blockquote { border-inline-start: 3px solid var(--color-accent); padding-inline-start: 1rem; color: var(--color-fg-muted); }
-```
-
-## Dark mode toggle (CSS only)
-
-```css
-:root[data-theme="dark"] {
-  --color-bg: <color.bg-dim>;
-  --color-bg-alt: <color.bg-alt-dim>;
-  --color-fg: <color.fg-light>;
-  --color-fg-muted: <color.fg-muted-light>;
-  --color-border: <color.border-light>;
-}
-```
-
-JS toggle (in `assets/script.js`):
-
-```js
-const root = document.documentElement;
-const stored = localStorage.getItem('theme');
-if (stored) root.dataset.theme = stored;
-else if (matchMedia('(prefers-color-scheme: dark)').matches) root.dataset.theme = 'dark';
-document.querySelector('[data-action="theme-toggle"]')?.addEventListener('click', () => {
-  const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
-  root.dataset.theme = next;
-  localStorage.setItem('theme', next);
-});
-```
-
-## Accessibility baseline (must ship)
-
-- `<html lang="...">` set from `site.language`
-- `<a class="skip-link" href="#main">` at top of body, hidden until focused
-- One `<h1>` per page
-- `<nav aria-label="...">` for each nav region
-- `<time datetime="YYYY-MM-DD">` for dates
-- Form fields with `<label>`
-- `:focus-visible { outline: 2px solid var(--color-accent); }`
-- Respect `prefers-reduced-motion`:
-  ```css
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-  ```
-
-## Common pitfalls
-
-- Forgetting `min-height` on `<main>` makes short pages collapse the footer up.
-- Using `vh` units for full-bleed sections breaks on iOS Safari (use `dvh` or `svh`).
-- Inline SVGs without `aria-hidden="true"` pollute the accessibility tree.
-- Hex colors with alpha `#fff8` won't validate — use `color-mix(in srgb, var(--color-fg) 50%, transparent)` or `rgb(from var(--color-fg) r g b / 50%)`.
-- `:focus { outline: none }` without a replacement violates WCAG 2.4.7.
-
-## Inspiration sources to draw from
-
-When the user mentions a reference site, prefer to extract: color palette, font pairing, hero layout, card density, nav style, footer tone. Do not copy markup verbatim — only the design intent. Feed the intent through `prompts/design-system-extraction.md`.
+- 用戶新增 design skill 到 Hermes 時：在「已安裝的設計 skill」表加一行 + 在 fallback 鏈加一條
+- popular-web-designs 新增 brand 模板時：更新「54 個品牌」段落（直接 `ls` 該目錄驗證）
+- 用戶對設計流程有調整建議時：更新「AI 生成 pipeline 時的強制流程」段

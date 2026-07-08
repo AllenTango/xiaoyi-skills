@@ -148,3 +148,17 @@ When a generated pipeline renders empty pages, check these first:
 When debugging, compare against `~/temp/ssg-demo*/.xiaoyi-ssg/templates/base.html` — these are known-good examples after fixing the above issues.
 
 For full conventions see `templates/conventions.md`.
+
+## Design System: Always Delegate to Hermes Skills (Mandatory)
+
+When generating `assets/style.css`, you must NOT invent design tokens from scratch. Hermes already ships with three first-class design skills — pick the right one and load its content:
+
+| User intent | Hermes skill (already installed) | How to load |
+|------------|----------------------------------|-------------|
+| "Like Stripe / Linear / Vercel / Notion / Anthropic / etc." (54 brands) | `popular-web-designs` | `skill_view(name="popular-web-designs", file_path="templates/<brand>.md")` |
+| Original design from scratch, no specific brand | `claude-design` | `skill_view(name="claude-design")` |
+| Persist tokens as a formal DESIGN.md spec file | `design-md` | `skill_view(name="design-md")` |
+
+Full dispatch rules and the 54-brand list live in `references/frontend-design-integration.md`. The reference file is intentionally thin — it lists *which skill to call*, never *what CSS to write* — so single-source-of-truth design intent flows from the design skills into your pipeline.
+
+The internal `references/frontend-design-integration.md` previously contained hand-written CSS snippets; those have been removed in favor of strict delegation. Do not reintroduce hardcoded CSS, color tokens, or font stacks in this skill.

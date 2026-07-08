@@ -3,7 +3,21 @@
 > ⚠️ **必读前置**：
 > 1. [`templates/conventions.md`](../templates/conventions.md) — 模板语法、变量绑定、custom fields 强制约定
 > 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — render.js 完整规格
-> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — `assets/style.css` 的 design token、card/hero/nav、dark mode、a11y 模板代码（生成 CSS 时直接照搬）
+> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — **CSS 不能自製！** 必須委派給 Hermes 已安裝嘅 `popular-web-designs` / `claude-design` / `design-md` skill，照搬佢哋嘅設計 token
+
+## 设计系统强制委派（重要！）
+
+**绝对不要**在 AI 自己脑子里"設計" CSS / color / typography token。**必须**先调用以下任一已安裝嘅 Hermes skill（用户已装）拿真实设计系统：
+
+| 用户需求 | 用呢個 skill（已装） | 命令 |
+|---------|---------------------|------|
+| 「像 Stripe / Linear / Vercel / Anthropic 風」等已知品牌 | `popular-web-designs` | `skill_view(name="popular-web-designs", file_path="templates/<brand>.md")` |
+| 「原創設計 / 你自己設計」 | `claude-design` | `skill_view(name="claude-design")` |
+| 「要 DESIGN.md token spec 持久化」 | `design-md` | `skill_view(name="design-md")` |
+
+54 個品牌模板清單：airbnb / airtable / apple / bmw / cal / claude / clay / clickhouse / cohere / coinbase / composio / cursor / elevenlabs / expo / figma / framer / hashicorp / ibm / intercom / kraken / linear.app / lovable / MiniMax / mintlify / miro / mistral.ai / mongodb / notion / nvidia / ollama / opencode.ai / pinterest / posthog / raycast / replicate / resend / revolut / runwayml / sanity / sentry / spacex / spotify / stripe / supabase / superhuman / together.ai / uber / vercel / voltagent / warp / webflow / wise / x.ai / zapier。
+
+完整流程見 [`references/frontend-design-integration.md`](../references/frontend-design-integration.md)。
 
 指导 AI 生成完整渲染管线（`.xiaoyi-ssg/` 目录下所有文件）。
 
