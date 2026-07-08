@@ -1,12 +1,24 @@
 ---
 name: xiaoyi-ssg
-version: 1.0.0
+version: 1.2.0
 description: Use only when the user explicitly invokes /xiaoyi-ssg, names xiaoyi-ssg, or asks to create/maintain a xiaoyi static-site project. Generates and maintains a project-specific static-site pipeline with content models, design tokens, accessible UI, and static-host-compatible browser interactions such as navigation, search, filters, theme toggles, forms, galleries, media controls, charts, or maps.
+client_compatibility: any AI agent with skills-protocol support (Hermes, Claude Code, Codex CLI, Cursor, Aider, Continue.dev, etc.). The skill content is client-agnostic; the user's client must provide the equivalent of `load_skill` / `skill_view` and a way to run shell + write files.
 ---
 
 # xiaoyi-ssg
 
 Use this skill as a lightweight router for a generated static site pipeline. Keep this file in context; load detailed prompt files only when the matching task requires them.
+
+## Client Compatibility
+
+This skill works in **any AI client that supports the open skills protocol** (Hermes Agent, Claude Code, OpenAI Codex CLI, Cursor, Aider, Continue.dev, OpenHands, Roo Code, etc.). It assumes the client can:
+
+1. **Load the skill's prompt files** — equivalent to `load_skill("xiaoyi-ssg")` or `skill_view(name="xiaoyi-ssg", file_path="prompts/pipeline-generation.md")`. The exact command varies by client.
+2. **Run shell commands** — to invoke `node render.js`, `npm install`, `git init`, etc.
+3. **Read and write files** — to update `<SITE_ROOT>/config.yml`, `source/_post/*.md`, `public/index.html`, etc.
+4. **Optionally delegate to other skills** — for design tokens, this skill recommends `popular-web-designs` / `claude-design` / `design-md` (Hermes ecosystem names; equivalent names on other clients: OpenAI Codex uses `~/.codex/skills/`, Claude Code uses `.claude/skills/` or plugin marketplace, Cursor uses `~/.cursor/rules`, etc.).
+
+If your client lacks skills-protocol support but can read these files directly, that also works — the prompts in `prompts/` and `references/` are plain Markdown intended for any AI to consume.
 
 ## First Rules
 
@@ -149,16 +161,44 @@ When debugging, compare against `~/temp/ssg-demo*/.xiaoyi-ssg/templates/base.htm
 
 For full conventions see `templates/conventions.md`.
 
-## Design System: Always Delegate to Hermes Skills (Mandatory)
+## Design System: Always Delegate to Design Skills (Client-Agnostic)
 
-When generating `assets/style.css`, you must NOT invent design tokens from scratch. Hermes already ships with three first-class design skills — pick the right one and load its content:
+When generating `assets/style.css`, you must NOT invent design tokens from scratch. Delegate to whichever design skills your AI client provides — the examples below cover the most common ecosystems:
 
-| User intent | Hermes skill (already installed) | How to load |
-|------------|----------------------------------|-------------|
-| "Like Stripe / Linear / Vercel / Notion / Anthropic / etc." (54 brands) | `popular-web-designs` | `skill_view(name="popular-web-designs", file_path="templates/<brand>.md")` |
-| Original design from scratch, no specific brand | `claude-design` | `skill_view(name="claude-design")` |
-| Persist tokens as a formal DESIGN.md spec file | `design-md` | `skill_view(name="design-md")` |
+| User intent | Hermes Agent | Claude Code | OpenAI Codex CLI | Cursor | Aider / Continue.dev |
+|------------|--------------|-------------|------------------|--------|-----------------------|
+| "Like Stripe / Linear / Vercel / Notion / Anthropic / etc." (54 brands) | `popular-web-designs` | marketplace plugin `claude-design` or local `~/.claude/skills/popular-web-designs/` | `~/.codex/skills/popular-web-designs/` | copy templates into `~/.cursor/rules/` | paste templates into project `.aider/` or repo `AGENTS.md` |
+| Original design from scratch, no specific brand | `claude-design` | `claude-design` marketplace plugin | custom workflow | `~/.cursor/rules/claude-design.md` | `~/.aider/` rules |
+| Persist tokens as a formal DESIGN.md spec file | `design-md` | local skill or plugin | local skill | local rule | local rule |
+| Fallback (no design skill available) | Read `popular-web-designs/templates/claude.md` directly as a reference file | Same — it's plain Markdown | Same | Same | Same |
 
-Full dispatch rules and the 54-brand list live in `references/frontend-design-integration.md`. The reference file is intentionally thin — it lists *which skill to call*, never *what CSS to write* — so single-source-of-truth design intent flows from the design skills into your pipeline.
+The fallback path is important: even if your client has no design skill installed, the 54 brand templates in `popular-web-designs/templates/*.md` are plain Markdown files an AI can read directly with `cat` / `Read` / file tools. They include complete design tokens and a "Hermes Implementation Notes" block with copy-paste-ready CSS variables and Google Fonts `<link>` tags.
+
+Full dispatch rules and the 54-brand list live in `references/frontend-design-integration.md`. The reference file is intentionally thin — it lists *which skill to call*, never *what CSS to write* — so single-source-of-truth design intent flows from whichever design skill your client provides into your pipeline.
 
 The internal `references/frontend-design-integration.md` previously contained hand-written CSS snippets; those have been removed in favor of strict delegation. Do not reintroduce hardcoded CSS, color tokens, or font stacks in this skill.
+
+## Responsive & Client-Agnostic Output (Mandatory)
+
+Generated sites must work on **any device, any browser, any viewport size** without user-agent detection or device-specific JavaScript shims.
+
+**Forbidden:**
+
+- ❌ User-Agent string sniffing (`navigator.userAgent.match(/iPhone/)` etc.)
+- ❌ Client Hints API for capability gating (`navigator.userDataMobile`)
+- ❌ Device-specific CSS classes hardcoded by JS (`.is-mobile`)
+- ❌ "Download our app" prompts that block the responsive web view
+- ❌ Minimum screen width requirements that hide content on small viewports
+- ❌ Touch vs mouse detection that disables hover-only interactions on touch devices
+- ❌ iOS-only or Android-only features (no `-webkit-` required for core functionality)
+
+**Required:**
+
+- ✅ Mobile-first CSS: base styles target narrow viewports; `@media (min-width: 768px)` etc. add desktop enhancements
+- ✅ Use only `pointer` / `hover` / `any-pointer` / `any-hover` media queries when capability gating is truly needed (e.g. `lightbox hover vs tap`); always provide a non-hover fallback
+- ✅ All interactive elements reachable via keyboard, with visible focus rings (`:focus-visible`)
+- ✅ Use `dvh` / `svh` units (not `vh`) for full-viewport sections to handle iOS Safari's dynamic chrome
+- ✅ Test layouts at 360px (small phone), 768px (tablet), 1280px (desktop), 1920px (wide desktop)
+- ✅ Respect `prefers-reduced-motion` and `prefers-color-scheme` as users' actual preference, not just a CSS class toggle
+
+When in doubt, follow the responsive guidance baked into the chosen `popular-web-designs` template — Stripe, Anthropic, Linear, etc. all ship mobile-first responsive CSS in their `Hermes Implementation Notes`.
