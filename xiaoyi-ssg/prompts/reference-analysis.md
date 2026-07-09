@@ -1,24 +1,24 @@
 # Reference Analysis Prompt
 
-指导 AI 分析参考站点（URL/HTML/截图描述），提取结构化设计意图。
+This prompt guides the AI in analyzing a reference site (URL / HTML / screenshot description) and extracting structured design intent.
 
-## 输入
+## Input
 
-- 用户提供的 URL（通过 WebFetch 抓取 HTML）
-- 或用户的文字描述/截图描述
+- URL provided by the user (HTML fetched via WebFetch)
+- Or text description / screenshot description from the user
 
-## 输出：design-intent.json
+## Output: design-intent.json
 
 ```json
 {
   "source": "https://example.com/portfolio",
   "extracted_at": "2025-01-15T14:30:00Z",
   "color": {
-    "background": "暖白 #faf9f7 / 深灰 #1a1a1a",
-    "text": "近黑 #1a1a1a / 暖白 #faf9f7",
-    "accent": "深靛蓝 #3b2f7a — 少量用于链接、hr、激活导航",
-    "muted": "暖灰 #8a8680 — 元文本、边框、禁用态",
-    "border": "发丝线 #e8e6e3 / 微妙 #333333",
+    "background": "warm white #faf9f7 / dark gray #1a1a1a",
+    "text": "near-black #1a1a1a / warm white #faf9f7",
+    "accent": "deep indigo #3b2f7a — sparingly used for links, hr, active nav",
+    "muted": "warm gray #8a8680 — meta text, border, disabled state",
+    "border": "hairline #e8e6e3 / subtle #333333",
     "semantic": {
       "focus": "#3b2f7a",
       "error": "#c0392b",
@@ -26,15 +26,15 @@
     }
   },
   "typography": {
-    "fontDisplay": "'Fraunces', Georgia, serif — 高对比度、锐利衬线、独特斜体",
-    "fontBody": "'Source Serif 4', Georgia, serif — 小字号可读、旧式数字",
-    "fontMono": "'JetBrains Mono', monospace — 紧凑间距、清晰标点",
+    "fontDisplay": "'Fraunces', Georgia, serif — high contrast, sharp serifs, distinctive italics",
+    "fontBody": "'Source Serif 4', Georgia, serif — readable at small sizes, old-style numerals",
+    "fontMono": "'JetBrains Mono', monospace — tight tracking, clear punctuation",
     "scale": {
       "h1": "clamp(2.5rem, 5vw, 4rem) / 1.1",
-      "h2": "clamp(1.75rem, 3.5vw, 2.5rem) / 1.2",
-      "h3": "clamp(1.25rem, 2.5vw, 1.75rem) / 1.3",
+      "h2": "clamp(1.75rem, 3vw, 2.5rem) / 1.2",
+      "h3": "clamp(1.25rem, 2.25vw, 1.625rem) / 1.3",
       "body": "1.125rem / 1.75",
-      "small": "0.875rem / 1.6"
+      "small": "0.875rem / 1.55"
     },
     "lineLength": "65ch",
     "letterSpacing": {
@@ -58,99 +58,106 @@
     "rhythm": "3rem"
   },
   "components": {
-    "card": "无边框、无阴影 — 仅靠留白分离。标题用标题字体，元信息用静音小字，摘要用正文字体。悬停：标题下划线变强调色。",
-    "grid": "不适用 — 单列堆叠",
-    "nav": "纯文字、大写、字间距 0.1em、激活态强调色。无默认下划线。",
-    "button": "幽灵式 — 强调色文字、发丝边框、内边距 0.75rem 1.5rem。悬停：填充强调色、文字在强调色背景上。",
-    "form": "内联标签、输入框底部发丝边框、强调色聚焦环",
-    "blockquote": "左边框 3px 强调色、斜体正文、静音引用",
-    "code": "等宽、静音背景、内边距 0.2em 0.4em、圆角 3px",
-    "pre": "等宽、近黑背景、暖白文字、横向滚动、内边距 1.5rem",
-    "hr": "发丝线、居中、20% 宽度、强调色",
-    "pagination": "居中、上一页/下一页 + 页码、激活态强调填充、充足触控目标",
+    "card": "no border, no shadow — separation by whitespace only. Title in heading font, meta in muted small text, excerpt in body font. Hover: title underline shifts to accent color.",
+    "grid": "n/a — single column stack",
+    "nav": "text only, uppercase, letter-spacing 0.1em, active state in accent color. No default underline.",
+    "button": "ghost — accent text, hairline border, padding 0.75rem 1.5rem. Hover: fill with accent color, text in accent background.",
+    "form": "inline labels, hairline bottom border on inputs, accent focus ring",
+    "blockquote": "left border 3px accent, italic body, muted citation",
+    "code": "monospace, muted background, padding 0.2em 0.4em, radius 3px",
+    "pre": "monospace, near-black background, warm white text, horizontal scroll, padding 1.5rem",
+    "hr": "hairline, centered, 20% width, accent color",
+    "pagination": "centered, prev/next + page numbers, active state accent fill, ample touch targets",
     "media": "aspect-video, object-cover, border-radius-inherit"
   },
   "motion": {
-    "entrance": "交错淡入上移 (opacity 0→1, translateY 1rem→0) — 150ms 基础, 60ms 交错, cubic-bezier(0.2, 0.8, 0.2, 1)",
-    "hover": "颜色过渡 120ms ease-out (链接、按钮、卡片标题)",
-    "scroll": "无 — 尊重 prefers-reduced-motion",
-    "focus": "强调色轮廓 2px, 偏移 2px — 即时",
-    "pageTransition": "即时 — 无客户端路由"
+    "entrance": "staggered fade-up (opacity 0→1, translateY 1rem→0) — 150ms base, 60ms stagger, cubic-bezier(0.2, 0.8, 0.2, 1)",
+    "hover": "color transition 120ms ease-out (links, buttons, card titles)",
+    "scroll": "none — respect prefers-reduced-motion",
+    "focus": "accent outline 2px, offset 2px — instant",
+    "pageTransition": "instant — no client-side routing"
   },
   "fontsSelfHosted": [
     "Fraunces: woff2, variable (opsz, wght, SOFT, WONK), subset latin",
     "Source Serif 4: woff2, variable (wght), subset latin",
     "JetBrains Mono: woff2, variable (wght), subset latin"
   ],
-  "uniquenessGuidance": "每次生成应变化：header 底部内边距 (2.5–4rem)、正文字体行高 (1.7–1.85)、强调色使用密度 (仅链接 vs 链接+hr+激活导航)、卡片摘要长度 (2 vs 3 行)、文章页 h1 是否有微妙顶部边框。永不重复相同节奏。",
+  "uniquenessGuidance": "Each generation should vary: header bottom padding (2.5–4rem), body font line-height (1.7–1.85), accent color density (links only vs links+hr+active nav), card excerpt length (2 vs 3 lines), whether the post page h1 has a subtle top border. Never repeat the same rhythm.",
   "confidence": 0.85,
-  "notes": "参考站为单列博客，无侧边栏，导航极简。适合长文阅读。"
+  "notes": "The reference is a single-column blog with no sidebar, minimal nav. Suitable for long-form reading."
 }
 ```
 
-## 分析维度与提取方法
+## Analysis Dimensions and Extraction Methods
 
-### 1. 色彩
-- 使用浏览器开发者工具或计算主色调
-- 提取：背景、文字、强调、静音、边框、语义色（focus/error/success）
-- 注明亮/暗模式差异（CSS `prefers-color-scheme` 或类名切换）
+### 1. Color
 
-### 2. 字体
-- 识别标题/正文/等宽字体栈（`font-family` 计算值）
-- 提取字级层级：h1-h3、body、small、micro 的 `font-size` + `line-height`
-- 字长限制（`max-width` 或 `ch` 单位）
-- 字间距（`letter-spacing`）
+- Use browser dev tools or compute the dominant palette.
+- Extract: background, text, accent, muted, border, semantic colors (focus/error/success).
+- Note light/dark mode differences (`prefers-color-scheme` CSS or class toggle).
 
-### 3. 间距
-- 容器最大宽度
-- 节奏/基线网格（模块间垂直间距）
-- 间隙/槽宽（grid gap、组件内边距）
-- 圆角半径
+### 2. Typography
 
-### 4. 布局
-- 栏数（CSS grid/template-columns、flex basis）
-- 侧边栏：有无、宽度、位置（左/右）、粘性
-- Header/Footer：高度、定位（fixed/sticky/static）、背景、边框
-- 英雄区：是否存在、高度、内容结构
+- Identify heading / body / monospace font stacks (computed `font-family`).
+- Extract the type scale: h1–h3, body, small, micro `font-size` + `line-height`.
+- Line length constraint (`max-width` or `ch` units).
+- Letter spacing (`letter-spacing`).
 
-### 5. 组件风格
-- 卡片：边框/阴影/背景、悬停态、媒体比例、元信息排版
-- 导航：文字/图标、大小写、间距、激活态、移动端模式
-- 按钮：变体（primary/secondary/ghost）、圆角、内边距、悬停/聚焦
-- 表单：标签位置、输入框边框/背景、聚焦态、验证提示
-- 引用块：左边框/缩进/字体样式/引用样式
-- 代码：内联/块、背景、圆角、行号、复制按钮
-- 分页：布局、页码样式、激活态、省略号
-- 面包屑：分隔符、层级深度、可点击范围
+### 3. Spacing
 
-### 6. 动效
-- 入场：类型、时长、缓动、交错延迟
-- 悬停：颜色/变换/阴影过渡
-- 滚动：视差/揭示/头部阴影
-- 聚焦：轮廓/偏移/动画
-- 页面切换：是否 SPA、转场类型
+- Container maximum width.
+- Rhythm / baseline grid (vertical spacing between modules).
+- Gap / slot width (grid gap, component padding).
+- Corner radius.
 
-### 7. 字体自托管
-- 识别 `@font-face` 或字体服务 URL
-- 提取字体族、字重、格式、子集
+### 4. Layout
 
-## 处理策略
+- Column count (CSS grid / template-columns, flex basis).
+- Sidebar: presence, width, position (left/right), sticky.
+- Header / Footer: height, positioning (fixed/sticky/static), background, border.
+- Hero: presence, height, content structure.
 
-| 情况 | 处理 |
-|------|------|
-| 用户给 URL | WebFetch 抓取 HTML，必要时抓取关键 CSS/JS |
-| 用户给截图描述 | 根据描述推导，标记 `confidence` 降低 |
-| 用户给文字描述 | 直接结构化，无需抓取 |
-| 无法提取某字段 | 留空，后续由用户偏好补全 |
-| 多参考站融合 | 分别分析，再按用户权重融合（提示用户确认） |
+### 5. Component Style
 
-## 输出要求
+- Card: border/shadow/background, hover state, media ratio, meta layout.
+- Nav: text/icon, size, case, spacing, active state, mobile mode.
+- Button: variants (primary/secondary/ghost), radius, padding, hover/focus.
+- Form: label position, input border/background, focus state, validation hint.
+- Blockquote: left border / indent / font style / citation style.
+- Code: inline / block, background, radius, line numbers, copy button.
+- Pagination: layout, page-number style, active state, ellipsis.
+- Breadcrumb: separator, depth, clickable range.
 
-- 输出完整 `design-intent.json` 结构
-- `confidence` 字段标识提取可信度（0-1）
-- `notes` 记录关键观察、不确定点、建议后续确认方向
-- 所有数值使用 CSS 兼容格式（带单位、clamp() 等）
+### 6. Motion
 
-## 给 AI 的提示
+- Entrance: type, duration, easing, stagger delay.
+- Hover: color/transform/shadow transition.
+- Scroll: parallax / reveal / header shadow.
+- Focus: outline / offset / animation.
+- Page transition: SPA or not, transition type.
 
-> 你是设计系统分析师。从用户提供的参考站点中提取**可执行的设计规格**，而非主观描述。每个字段必须能直接转化为 CSS 变量或组件规则。遇到模糊不确定处，标记并建议追问用户。
+### 7. Self-Hosted Fonts
+
+- Identify `@font-face` or font service URLs.
+- Extract font family, weight, format, subset.
+
+## Handling Strategy
+
+| Situation | Handling |
+|-----------|----------|
+| User provides a URL | WebFetch the HTML; fetch key CSS/JS as needed |
+| User provides a screenshot description | Derive from the description; mark lower `confidence` |
+| User provides a text description | Structure directly, no fetch needed |
+| Cannot extract a field | Leave empty; later filled by user preference |
+| Multiple reference sites merged | Analyze each separately, then merge by user-defined weights (confirm with user) |
+
+## Output Requirements
+
+- Output the full `design-intent.json` structure.
+- `confidence` field indicates extraction confidence (0-1).
+- `notes` record key observations, uncertainties, suggested follow-up.
+- All values use CSS-compatible format (with units, `clamp()` etc.).
+
+## Hint to AI
+
+> You are a design system analyst. Extract **executable design specifications** from the reference site the user provides, not subjective descriptions. Each field must be directly translatable to CSS variables or component rules. When something is ambiguous, mark it and suggest asking the user.

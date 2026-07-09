@@ -1,26 +1,17 @@
 # Design Token Normalization Prompt
 
-This prompt tells the AI how to convert an already-loaded design source into the
-project-local `.xiaoyi-ssg-design-tokens.json` file. It does not authorize the AI
-to invent a visual system from scratch.
+This prompt tells the AI how to convert an already-loaded design source into the project-local `.xiaoyi-ssg-design-tokens.json` file. It does not authorize the AI to invent a visual system from scratch.
 
-Before using this prompt, read `references/frontend-design-integration.md` and
-load one concrete design source:
-
-- a design skill such as `popular-web-designs`, `claude-design`, or `design-md`;
-- a plain Markdown design template from an installed design skill;
-- a user-provided `DESIGN.md`, screenshot analysis, or reference-site analysis;
-- as a last resort only, a small self-extracted source derived from the user's
-  explicit visual description.
+Before using this prompt, complete the pre-flight in [`SKILL.md` § Required Dependencies](../SKILL.md) and load the `frontend-design` skill. The `self-extracted` source is only allowed when the user explicitly passes `--allow-self-extracted`.
 
 ## Inputs
 
 ```json
 {
   "design_source": {
-    "source_skill": "popular-web-designs/stripe",
-    "source_ref": "skill:popular-web-designs/templates/stripe.md",
-    "loaded_content_summary": "Brief summary of the loaded source",
+    "source_skill": "frontend-design",
+    "source_ref": "skill:frontend-design/SKILL.md",
+    "loaded_content_summary": "Loaded source brief summary",
     "implementation_notes": "Exact CSS variables, font links, font stacks, or token notes from the source"
   },
   "design_intent": { "...": "optional output from reference-analysis.md" },
@@ -38,13 +29,11 @@ load one concrete design source:
 ## Source Priority
 
 1. User's explicit visual preferences.
-2. Loaded design source tokens and implementation notes.
-3. Reference-site analysis, only when the user asked for that reference.
+2. Loaded `frontend-design` tokens and implementation notes.
+3. Reference-site analysis (only when the user asked for that reference).
 4. Conservative system-safe completion for required schema fields that are absent.
 
-Do not use unstated "built-in aesthetics" to replace the loaded design source.
-When a required field is missing, derive the smallest compatible value from the
-source, explain it in `normalization_notes`, and keep `source_skill` accurate.
+Do not use unstated "built-in aesthetics" to replace the loaded design source. When a required field is missing, derive the smallest compatible value from the source, explain it in `normalization_notes`, and keep `source_skill` accurate.
 
 ## Output Schema
 
@@ -53,9 +42,9 @@ Write exactly one JSON object matching `schemas/design-tokens.json`:
 ```json
 {
   "version": 1,
-  "source_skill": "popular-web-designs/stripe",
-  "source_ref": "skill:popular-web-designs/templates/stripe.md",
-  "theme_ref": "stripe",
+  "source_skill": "frontend-design",
+  "source_ref": "skill:frontend-design/SKILL.md",
+  "theme_ref": "<user_specified_brand_or_default>",
   "theme_manifesto_hash": "sha256:<64 lowercase hex chars>",
   "tokens": {
     "color": {
@@ -139,34 +128,22 @@ Write exactly one JSON object matching `schemas/design-tokens.json`:
 
 ## Normalization Rules
 
-- Keep `source_skill` truthful. Use examples such as
-  `popular-web-designs/stripe`, `claude-design`, `design-md`, `user/DESIGN.md`,
-  `reference-url/<host>`, or `self-extracted`.
-- Use `self-extracted` only when no design skill, design file, reference URL, or
-  user-provided design spec is available.
-- Preserve exact color values, font stacks, spacing scales, radii, and motion
-  timings from the loaded source whenever possible.
-- Convert source token names into the xiaoyi schema; do not change the schema to
-  match the source.
-- If the source provides only light mode, derive `darkMode.color` from source
-  neutrals and record that derivation in `normalization_notes`.
-- If the source provides component CSS rather than component tokens, summarize
-  each component style as a short descriptive string and let
-  `pipeline-generation.md` map it to project CSS.
-- Generate `theme_manifesto_hash` from the loaded source content plus explicit
-  user overrides. Use lowercase hex.
+- Keep `source_skill` truthful. The default value is `"frontend-design"`. Use `"self-extracted"` only when no design skill, design file, reference URL, or user-provided design spec is available (and only after `--allow-self-extracted`).
+- Preserve exact color values, font stacks, spacing scales, radii, and motion timings from the loaded source whenever possible.
+- Convert source token names into the xiaoyi schema; do not change the schema to match the source.
+- If the source provides only light mode, derive `darkMode.color` from source neutrals and record that derivation in `normalization_notes`.
+- If the source provides component CSS rather than component tokens, summarize each component style as a short descriptive string and let `pipeline-generation.md` map it to project CSS.
+- Generate `theme_manifesto_hash` from the loaded source content plus explicit user overrides. Use lowercase hex.
 - Keep values CSS-compatible and schema-compatible. Include units on lengths.
 
 ## User Confirmation
 
-For broad visual changes, summarize only the decisions that materially affect the
-site before writing files:
+For broad visual changes, summarize only the decisions that materially affect the site before writing files:
 
 ```text
-Design source: popular-web-designs/stripe
+Design source: frontend-design
 Primary tokens: light background, blue-violet accent, sans display/body
 Adjusted for this site: 3-column project cards, 72rem container, 8px radius
 ```
 
-Do not ask the user to confirm every raw token unless the request is exploratory
-or ambiguous.
+Do not ask the user to confirm every raw token unless the request is exploratory or ambiguous.

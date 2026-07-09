@@ -130,7 +130,33 @@ For list templates, the render pipeline passes both `collection` (string) and `c
 For the breadcrumb / page-title to read the friendly collection name, the data also exposes `collectionName` (mirrored from `collection`). Use it in copy:
 
 ```html
-<h1><%= collectionName === 'post' ? '日誌' : collectionName %></h1>
+<h1><%= collectionName === 'post' ? 'Posts' : collectionName %></h1>
+```
+
+---
+
+## 4.1 Frontmatter GEO extensions (optional)
+
+`render.js` recognizes these frontmatter fields for GEO output. All are optional; defaults auto-derive when absent (see `prompts/geo-conventions.md`).
+
+| Field | Type | Effect when present | Default when absent |
+|-------|------|---------------------|---------------------|
+| `summary` | string | Used in `/llms.txt` entry, JSON-LD `description`, `<meta name="description">` | First paragraph of body, truncated to 200 chars |
+| `topics` | string[] | JSON-LD `keywords`, `<meta name="keywords">` | Omitted |
+| `audience` | string | JSON-LD `audience` | Omitted |
+| `citation_key` | string | Citation footer block (when template renders one) | Omitted |
+| `content_type` | string | JSON-LD `@type` override | Auto-mapped from collection name (`post` → `BlogPosting`, `doc` → `TechArticle`, etc.) |
+| `updated` | date | Sitemap `<lastmod>`, JSON-LD `dateModified` | Falls back to `date` |
+| `noai` | boolean | `<meta name="robots" content="noai">` on this page only | Site-wide `config.geo.noai` |
+
+Templates read these via the standard `item.*` access (frontmatter is flattened onto the item at scan time, see §3.2):
+
+```html
+<meta name="description" content="<%= item.summary || '' %>">
+<time datetime="<%= item.updated || item.date %>"><%= item.date_display %></time>
+<% if (item.noai) { %>
+  <meta name="robots" content="noai">
+<% } %>
 ```
 
 ---
@@ -176,6 +202,14 @@ After generating a pipeline, run the following smoke tests before declaring succ
 5. The content collection count in `public/<col>/` matches the number of source files in `source/_<col>/`.
 
 If any check fails, do not claim the pipeline works.
+
+For GEO-specific smoke tests (always add these):
+
+6. `grep -c 'application/ld+json' public/<detail-page>/index.html` is ≥ 1 (JSON-LD injected).
+7. `cat public/llms.txt` shows `# {site.title}` as the first line and at least one `- [...]` bullet per non-empty collection.
+8. `cat public/robots.txt` lists every bot in the standard 15-bot AI crawler list.
+9. For at least one content page, `cat public/<page>/index.md` is non-empty and does not begin with `---` (frontmatter stripped).
+10. With `config.geo.llms_full: false`, `public/llms-full.txt` does not exist. Flip to `true` and rebuild — it appears.
 
 ---
 

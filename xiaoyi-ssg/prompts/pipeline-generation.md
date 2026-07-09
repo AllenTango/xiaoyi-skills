@@ -1,40 +1,40 @@
 # Pipeline Generation Prompt
 
-> ⚠️ **必读前置**：
-> 1. [`templates/conventions.md`](../templates/conventions.md) — 模板语法、变量绑定、custom fields 强制约定
-> 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — render.js 完整规格
-> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — **CSS 不能自製！** 必須先載入可用的 design skill 或 plain Markdown design source，再用 `prompts/design-system-extraction.md` 规范化为 xiaoyi tokens
+> Required pre-reading:
+> 1. [`templates/conventions.md`](../templates/conventions.md) — template syntax, variable binding, custom field conventions
+> 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — full spec of `render.js`
+> 3. [`SKILL.md` § Design System Delegation](../SKILL.md) — design source delegation rules (CSS must not be invented)
+> 4. [`prompts/design-system-extraction.md`](./design-system-extraction.md) — normalize `frontend-design` content into xiaoyi tokens
 
-## 设计系统强制委派（重要！）
+## Design System Delegation (Mandatory)
 
-**绝对不要**在 AI 自己脑子里"設計" CSS / color / typography token。**必须**先调用或读取一个真实设计来源，再将它规范化成 `.xiaoyi-ssg-design-tokens.json`：
+**Never** invent CSS / color / typography tokens from scratch. All design sources must come from the `frontend-design` skill:
 
-| 用户需求 | 推荐设计来源 | 载入方式示例 |
-|---------|---------------------|------|
-| 「像 Stripe / Linear / Vercel / Anthropic 風」等已知品牌 | `popular-web-designs` | `skill_view(name="popular-web-designs", file_path="templates/<brand>.md")` |
-| 「原創設計 / 你自己設計」 | `claude-design` | `skill_view(name="claude-design")` |
-| 「要 DESIGN.md token spec 持久化」 | `design-md` | `skill_view(name="design-md")` |
+| User request | Design source | Load method |
+|--------------|---------------|-------------|
+| Any scenario (default) | `frontend-design` | `skill_view(name="frontend-design")` |
+| User explicitly specifies a brand subset | Brand index within `frontend-design` | Look up `<brand>.md` inside `frontend-design` |
 
-54 個品牌模板清單：airbnb / airtable / apple / bmw / cal / claude / clay / clickhouse / cohere / coinbase / composio / cursor / elevenlabs / expo / figma / framer / hashicorp / ibm / intercom / kraken / linear.app / lovable / MiniMax / mintlify / miro / mistral.ai / mongodb / notion / nvidia / ollama / opencode.ai / pinterest / posthog / raycast / replicate / resend / revolut / runwayml / sanity / sentry / spacex / spotify / stripe / supabase / superhuman / together.ai / uber / vercel / voltagent / warp / webflow / wise / x.ai / zapier。
+The `source_skill` field is uniformly `"frontend-design"`. `popular-web-designs/*`, `claude-design`, `self-extracted`, and similar values are not accepted (unless the user explicitly passes `--allow-self-extracted`, in which case it must be recorded in `pipeline-manifest.json` for traceability).
 
-如果当前 client 没有 `skill_view`，但本机有对应 Markdown 文件，可以直接读取该文件。完整流程見 [`references/frontend-design-integration.md`](../references/frontend-design-integration.md)。
+See [`SKILL.md` § Design System Delegation](../SKILL.md) and [`prompts/design-system-extraction.md`](./design-system-extraction.md) for the full normalization rules.
 
-指导 AI 生成完整渲染管线（`.xiaoyi-ssg/` 目录下所有文件）。
+This file guides the AI in generating the full rendering pipeline (all files under `.xiaoyi-ssg/`).
 
-## 输入上下文
+## Input Context
 
 ```json
 {
-  "design_tokens": { ... },    // 完整 .xiaoyi-ssg-design-tokens.json，对应 schemas/design-tokens.json
-  "tokens": { ... },           // design_tokens.tokens 的便捷别名
-  "content_types": { ... },    // content-types.json 完整内容
-  "config": { ... },           // config.yml 解析后的对象
+  "design_tokens": { ... },    // full .xiaoyi-ssg-design-tokens.json, conforming to schemas/design-tokens.json
+  "tokens": { ... },           // convenience alias for design_tokens.tokens
+  "content_types": { ... },    // full content-types.json
+  "config": { ... },           // config.yml after YAML parse
   "site_language": {           // inferred from the user's request unless explicitly overridden
     "code": "zh-CN",
     "source": "user-request|explicit-user-choice",
     "ui_language": "Chinese (Simplified)"
   },
-  "interactions_needed": [      // 基于用户需求、参考站点和内容模型推导
+  "interactions_needed": [      // derived from requirements, reference site, and content model
     {
       "name": "project-filter",
       "pages": ["projects"],
@@ -46,31 +46,31 @@
 }
 ```
 
-## 生成目标
+## Generation Target
 
-一次性生成 `<PIPELINE_DIR>/` 完整文件集：
+Generate the full `<PIPELINE_DIR>/` file set in one pass:
 
-```
+```text
 .xiaoyi-ssg/
-├── render.js                 # 核心渲染脚本（构建）——模板清单驱动
-├── dev.js                    # 开发服务器（watch + serve + live reload）
-├── package.json              # 依赖声明
-├── package-lock.json         # 依赖锁定
-├── node_modules/             # npm install 生成，git 忽略
-├── templates/                # 项目专用模板（由 manifest 决定清单）
-│   ├── base.html             // 布局骨架
-│   ├── *.html                // 由 template-manifest.json 声明的每个 page 模板
-│   └── partials/             // 可选片段
+├── render.js                 # core render script (build) — manifest-driven
+├── dev.js                    # dev server (watch + serve + live reload)
+├── package.json              # dependency declaration
+├── package-lock.json         # lock file
+├── node_modules/             # generated by npm install, git ignored
+├── templates/                # project templates (driven by manifest)
+│   ├── base.html             // layout skeleton
+│   ├── *.html                // each page template declared by template-manifest.json
+│   └── partials/             // optional partials
 ├── assets/
-│   ├── style.css             // 完整 CSS（含 Critical CSS 标记）
-│   ├── script.js             // 交互入口
-│   ├── interactions/         // 可选交互模块
-│   └── data/                 // 可选静态 JSON 数据
-├── template-manifest.json    # 单一事实来源：声明 collections、templates、globals
-├── config.schema.json        // 配置校验 schema
-├── content-types.json        // 内容类型定义（供 AI/校验用，渲染器不再直接读取）
-├── interactions.manifest.json // 交互契约、依赖、fallback、验证点
-└── pipeline-manifest.json    // 元数据
+│   ├── style.css             // full CSS (with Critical CSS markers)
+│   ├── script.js             // interaction entry
+│   ├── interactions/         // optional interaction modules
+│   └── data/                 // optional static JSON data
+├── template-manifest.json    // single source of truth
+├── config.schema.json        // config validation schema
+├── content-types.json        // content type definitions (for AI / validation; renderer does not read it directly)
+├── interactions.manifest.json // interaction contract, deps, fallbacks, verification
+└── pipeline-manifest.json    // metadata
 ```
 
 ## Language Inheritance
@@ -82,9 +82,9 @@
 - If a reference site uses another language, treat it as visual/content inspiration only; do not switch the generated site's primary language unless the user asked for that.
 - If the user mixes languages, prefer the language used for the actual site request. Ask only when the primary site language is ambiguous and materially affects generated content.
 
-## 生成策略
+## Generation Strategy
 
-### 1. package.json — 依赖声明
+### 1. package.json — Dependency Declaration
 
 ```json
 {
@@ -105,64 +105,64 @@
 }
 ```
 
-默认只使用以上依赖。若用户明确需要复杂图表、地图、全文搜索等交互，可以添加必要 npm 依赖；必须固定版本、避免 CDN-only 方案，并在 `interactions.manifest.json` 说明用途与 fallback。
+Use the four default dependencies above. If the user explicitly needs charts, maps, full-text search, or similar complex interactions, additional pinned npm dependencies may be added. Pin versions, avoid CDN-only, and document purpose + fallback in `interactions.manifest.json`.
 
-### 2. render.js — 核心渲染脚本（模板清单驱动）
+### 2. render.js — Core Render Script (Manifest-Driven)
 
-- **单文件**，Node.js 18+，ESM（`import`）
-- 依赖：`js-yaml`（YAML 解析）、`marked`（Markdown → HTML）、`eta`（模板引擎）
-- **核心逻辑**：
-  1. 读取 `template-manifest.json`（单一事实来源）
-  2. 扫描内容 → 构建 `collections`（按 manifest 的 collections 配置排序、分页、树形）
-  3. `expandTemplates()`：按 manifest.templates 展开为具体渲染任务
-  4. 遍历任务 → 渲染 → 写入 `public/`
-  5. 复制 assets、生成交互数据、Feed、Sitemap、404
-  6. 增量缓存（哈希包含：模板文件、manifest、tokens、配置、内容文件）
-- 详见 `prompts/render-node-spec.md`（新版）
+- Single file, Node.js 18+, ESM (`import`).
+- Dependencies: `js-yaml` (YAML), `marked` (Markdown → HTML), `eta` (templates).
+- Core flow:
+  1. Read `template-manifest.json` (single source of truth).
+  2. Scan content → build `collections` (sort, paginate, tree per manifest collections config).
+  3. `expandTemplates()`: expand manifest.templates into concrete render tasks.
+  4. Iterate tasks → render → write to `public/`.
+  5. Copy assets, generate interaction data, feed, sitemap, 404.
+  6. Incremental cache (hash includes: templates, manifest, tokens, config, content files).
+- See `prompts/render-node-spec.md` (new version).
 
-### 3. dev.js — 开发服务器
+### 3. dev.js — Dev Server
 
-- **单文件**，Node.js 18+，ESM
-- 依赖：`chokidar`（文件监听）、复用 `render.js` 的 `build()` 函数
-- 功能：
-  - HTTP 服务器 serve `public/`（端口 3000，被占用自动递增）
-  - chokidar 监听 `source/**/*.md`、`.xiaoyi-ssg/templates/**`、`.xiaoyi-ssg/assets/**`、`.xiaoyi-ssg/template-manifest.json`、`.xiaoyi-ssg/content-types.json`、`.xiaoyi-ssg/interactions.manifest.json`、`.xiaoyi-ssg-design-tokens.json`、`config.yml`、`source/_media/**`
-  - 变更 → 增量构建（复用 render.js 逻辑） → SSE 推送 reload
-  - HTML 响应拦截：在 `</body>` 前注入 SSE 客户端脚本
-- 详见 `prompts/render-node-spec.md`（新版）
+- Single file, Node.js 18+, ESM.
+- Dependencies: `chokidar` (file watching), reuses `render.js`'s `build()` function.
+- Behavior:
+  - HTTP server serves `public/` (port 3000, auto-increment on conflict).
+  - chokidar watches `source/**/*.md`, `.xiaoyi-ssg/templates/**`, `.xiaoyi-ssg/assets/**`, `.xiaoyi-ssg/template-manifest.json`, `.xiaoyi-ssg/content-types.json`, `.xiaoyi-ssg/interactions.manifest.json`, `.xiaoyi-ssg-design-tokens.json`, `config.yml`, `source/_media/**`.
+  - On change → incremental build (reuses render.js logic) → SSE push for reload.
+  - HTTP response interception: inject SSE client script before `</body>`.
+- See `prompts/render-node-spec.md` (new version).
 
-### 4. template-manifest.json — 单一事实来源
+### 4. template-manifest.json — Single Source of Truth
 
-**由 AI 根据用户意图 + 内容模型生成**。声明：
+**AI-generated from user intent + content model**. Declares:
 
-- `collections`：内容源配置（source 路径、排序、分页、singleton、tree）
-- `templates`：每个模板的名字、类型、布局、文件名、输出路径模板、数据绑定、展开策略
-- `globals`：全局注入数据
+- `collections`: content source config (source path, sort, pagination, singleton, tree).
+- `templates[]`: each template's name, type, layout, file name, output path template, data binding, expansion strategy.
+- `globals`: globally injected data.
 
-AI 生成时的决策规则：
+AI decision rules:
 
-| 用户意图 | 生成的 manifest 关键点 |
-|---------|---------------------|
-| "落地页，只要首页" | `collections.landing.singleton=true`；templates: base + landing(output="/") + 404 |
-| "博客/作品集" | `collections.posts.pagination` + `forEach: "collections"` (list) + `forEach: "items"` (detail) |
-| "文档站" | `collections.docs.tree=true`；templates: doc-index + doc-page(forEach: items) |
-| "组合站点" | 多 collections + 多 templates，按需组合 |
+| User intent | Manifest key points |
+|-------------|---------------------|
+| "Landing page, only homepage" | `collections.landing.singleton=true`; templates: base + landing (output="/") + 404 |
+| "Blog / portfolio" | `collections.posts.pagination` + `forEach: "collections"` (list) + `forEach: "items"` (detail) |
+| "Documentation site" | `collections.docs.tree=true`; templates: doc-index + doc-page (forEach: items) |
+| "Combined site" | Multiple collections + multiple templates, combined as needed |
 
-### 5. 模板生成原则
+### 5. Template Generation Principles
 
-**base.html** — 布局骨架（layout 类型）
-- `<header role="banner">`：站点标题链接首页、主导航（来自 `config.pages`）、移动端菜单按钮
-- `<main role="main">`：容器宽度受 `tokens.layout.containerMax` 限制
-- `<footer role="contentinfo">`：版权、RSS链接、外部链接、UTC时钟
-- CSS 变量完整映射 tokens
-- 无内联样式，仅语义化 class + CSS 变量
-- 在 `</body>` 前加载 `assets/script.js`
+**base.html** — layout skeleton (type=layout)
+- `<header role="banner">`: site title link to home, main nav (from `config.pages`), mobile menu toggle
+- `<main role="main">`: container width constrained by `tokens.layout.containerMax`
+- `<footer role="contentinfo">`: copyright, RSS link, external links, UTC clock
+- CSS variables fully mapped from tokens
+- No inline styles, semantic class + CSS variables only
+- Load `assets/script.js` before `</body>`
 
-**page 模板** — 由 manifest 声明的每个 page 模板
-- 列表页（`forEach: "collections"` + `forEach: "pagination"`）：页面标题、面包屑、卡片网格、分页控件、搜索/筛选控件（若 manifest 声明）
-- 详情/文档页（`forEach: "items"`）：面包屑、标题、日期、标签、封面、正文、上一篇/下一篇（可选）、树形侧边栏（若 `tree: true`）
-- 首页/单例页（无 `forEach` 或 `singleton: true`）：聚合展示或单页内容
-- 404 页：固定 output `/404.html`
+**page templates** — each page template declared in manifest
+- List pages (`forEach: "collections"` + `forEach: "pagination"`): page title, breadcrumb, card grid, pagination control, search/filter controls (if declared in manifest)
+- Detail / doc pages (`forEach: "items"`): breadcrumb, title, date, tags, cover, body, prev/next (optional), tree sidebar (if `tree: true`)
+- Home / singleton pages (no `forEach` or `singleton: true`): aggregated display or single-page content
+- 404 page: fixed output `/404.html`
 
 **Breadcrumb / URL safety**
 - URL path data and visual separators must be separate.
@@ -172,9 +172,9 @@ AI 生成时的决策规则：
 - Do not emit separators before the first item or after the last item.
 - Filter out empty breadcrumb items before rendering.
 
-### 6. CSS 变量映射（来自规范化 tokens）
+### 6. CSS Variable Mapping (from Normalized Tokens)
 
-CSS 变量只能映射 `.xiaoyi-ssg-design-tokens.json` 中的 xiaoyi schema 字段。字体链接、字体栈、颜色、圆角、阴影、动效等设计值必须能追溯到 `design_tokens.source_skill` / `design_tokens.source_ref`。不要在这里发明新的品牌色或字体。
+CSS variables may only map the xiaoyi schema fields in `.xiaoyi-ssg-design-tokens.json`. Font links, font stacks, colors, radii, shadows, motion must be traceable to `design_tokens.source_skill` / `design_tokens.source_ref`. Do not invent new brand colors or fonts here.
 
 ```css
 :root {
@@ -226,34 +226,34 @@ CSS 变量只能映射 `.xiaoyi-ssg-design-tokens.json` 中的 xiaoyi schema 字
 }
 ```
 
-**Critical CSS 标记**：在 `style.css` 中用注释标记 Critical CSS 范围，渲染脚本内联到 HTML `<style>`。
+**Critical CSS markers**: in `style.css`, mark the Critical CSS range with comments; the render script inlines it into HTML `<style>`.
 
 ```css
 /* critical:start */
-:root { ... }  /* 所有 CSS 变量 */
-.site-header { ... }  /* header 关键样式 */
+:root { ... }  /* all CSS variables */
+.site-header { ... }  /* header critical styles */
 .site-footer { ... }
 .main-wrapper { ... }
 /* critical:end */
 ```
 
-### 7. 组件样式生成（基于 tokens.component）
+### 7. Component Style Generation (based on tokens.component)
 
-将 tokens.component 的描述性字符串转为具体 CSS 规则。规则必须是对已加载设计来源的适配，不是重新设计。例如：
+Convert the descriptive strings in `tokens.component` into specific CSS rules. Rules must adapt the loaded design source, not redesign. Examples:
 
 - `card: "no-border, whitespace-separation"` → `.card { border: none; margin-bottom: var(--rhythm); }`
 - `nav: "text-only, uppercase, letter-spacing-0.1em"` → `.nav a { text-transform: uppercase; letter-spacing: 0.1em; }`
 - `button: "ghost, accent-text, hairline-border"` → `.btn { background: transparent; color: var(--color-accent); border: 1px solid var(--color-border); }`
 
-如果 `tokens.normalization_notes` 或设计来源提供了更具体的组件 CSS，优先使用那些具体规则。
+If `tokens.normalization_notes` or the design source provides more specific component CSS, prefer those.
 
-### 8. script.js — 必需交互
+### 8. script.js — Required Interactions
 
-- 作为交互 bootstrap：扫描 `[data-interaction]`，初始化需要的模块，避免全局变量污染
-- 默认包含移动端菜单切换、可访问的展开/折叠状态同步、可选 UTC 时钟、平滑锚点滚动
-- 按需求生成模块：搜索、筛选、排序、标签/分类 chips、暗色切换、本地偏好记忆、lightbox、视频懒加载、表单校验、复制按钮、tabs/accordion、图表、地图等
-- 每个交互必须支持键盘操作、焦点管理、ARIA 状态同步、`prefers-reduced-motion`，并在无 JS 时尽量保持内容可读或链接可用
-- 对需要数据的交互，生成 `assets/data/*.json`，并在构建哈希中包含数据输入
+- Acts as the interaction bootstrap: scans `[data-interaction]`, initializes needed modules, avoids polluting global scope.
+- Default includes mobile menu toggle, accessible expand/collapse state sync, optional UTC clock, smooth anchor scrolling.
+- Generate modules as needed: search, filter, sort, tag/category chips, dark toggle, local preference memory, lightbox, video lazy loading, form validation, copy button, tabs/accordion, charts, maps, etc.
+- Each interaction must support keyboard operation, focus management, ARIA state sync, `prefers-reduced-motion`, and remain readable / linked when JS is disabled.
+- For data-driven interactions, generate `assets/data/*.json` and include the data inputs in the build hash.
 
 ### 9. interactions.manifest.json
 
@@ -278,9 +278,49 @@ CSS 变量只能映射 `.xiaoyi-ssg-design-tokens.json` 中的 xiaoyi schema 字
 
 ### 10. config.schema.json
 
-从模板裁剪，仅保留当前站点用到的字段。用于 `render.js` 启动时校验。
+Trimmed from the template, retaining only the fields used by the current site. Used for `render.js` startup-time validation.
 
-### 11. pipeline-manifest.json
+**Always include the `geo` block** (even with default values):
+
+```json
+{
+  "properties": {
+    "site": { ... },
+    "geo": {
+      "type": "object",
+      "properties": {
+        "ai_bots": { "enum": ["allow", "block", "custom"], "default": "allow" },
+        "ai_bot_rules": { "type": "object", "additionalProperties": { "enum": ["allow", "block"] } },
+        "llms_full": { "type": "boolean", "default": false },
+        "markdown_mirror": { "type": "boolean", "default": true },
+        "jsonld": { "type": "boolean", "default": true },
+        "noai": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+### 11. GEO config.yml block
+
+Always emit the `geo:` block in `config.yml` with explicit defaults. The user can edit any field without surprises:
+
+```yaml
+geo:
+  ai_bots: allow            # allow | block | custom
+  # ai_bot_rules:           # only when ai_bots: custom
+  #   GPTBot: allow
+  #   ClaudeBot: allow
+  llms_full: false          # opt-in for /llms-full.txt
+  markdown_mirror: true     # per-page /<url>/index.md alongside HTML
+  jsonld: true              # <script type="application/ld+json"> in <head>
+  noai: false               # site-wide <meta name="robots" content="noai">
+```
+
+Full spec: see [`prompts/geo-conventions.md`](./geo-conventions.md). Source discipline: existing `source/_<type>/*.md` IS the GEO source — do NOT add a `_geo/` directory.
+
+### 12. pipeline-manifest.json
 
 ```json
 {
@@ -297,29 +337,29 @@ CSS 变量只能映射 `.xiaoyi-ssg-design-tokens.json` 中的 xiaoyi schema 字
 }
 ```
 
-## 输出要求
+## Output Requirements
 
-- 所有文件内容作为字符串返回，由 AI 写入用户项目
-- 代码风格：ESM `import`、HTML 语义化、CSS 变量驱动
-- 依赖默认限 `js-yaml`、`marked`、`chokidar`、`eta`；若交互需要额外包，必须固定版本、写入 manifest，并确保 `npm install && npm run build` 可运行
-- 确保生成的 `render.js`、`dev.js` 可直接运行
+- All file contents returned as strings, written by the AI into the user project.
+- Code style: ESM `import`, semantic HTML, CSS-variable-driven.
+- Default dependencies limited to `js-yaml`, `marked`, `chokidar`, `eta`. If interactions need extra packages, pin the version, write to manifest, and ensure `npm install && npm run build` works.
+- Ensure the generated `render.js` and `dev.js` run directly.
 
-## 关键约束
+## Key Constraints
 
-1. **Tokens 不可变**：生成的管线不再解析 tokens，仅使用内联的 CSS 变量值
-2. **模板包含交互钩子**：每个模板包含完整页面结构和必要 `data-*`/ARIA 钩子；允许浏览器 JS 做渐进增强
-3. **确定性**：相同输入 → 相同输出（seed 固定）
-4. **增量友好**：以下变更会触发相关页面重建（哈希包含这些输入）：
-   - 内容文件 `source/**/*.md`
-   - 模板文件 `.xiaoyi-ssg/templates/**/*.html`
-   - 模板清单 `.xiaoyi-ssg/template-manifest.json`
-   - 设计 tokens `.xiaoyi-ssg-design-tokens.json`
-   - 配置 `config.yml`
-   - 内容类型 `.xiaoyi-ssg/content-types.json`
-   - 交互 manifest `.xiaoyi-ssg/interactions.manifest.json`
-   - 交互模块 `.xiaoyi-ssg/assets/interactions/*.js`
-   - 交互数据 `.xiaoyi-ssg/assets/data/*.json`
-   - 样式/脚本 `.xiaoyi-ssg/assets/style.css`, `.xiaoyi-ssg/assets/script.js`
-5. **dev server 注入**：仅 dev 模式注入 SSE 脚本，build 产物不含注入脚本
-6. **ESM 模块**：所有 `.js` 文件使用 `import`/`export`，`package.json` 含 `"type": "module"`
-7. **无硬编码模板集**：render.js 完全由 template-manifest.json 驱动，不内置 list/detail/index 等固定分支
+1. **Tokens are immutable**: the generated pipeline does not re-parse tokens at runtime; it uses inlined CSS variable values.
+2. **Templates include interaction hooks**: every template contains full page structure and required `data-*` / ARIA hooks; allow browser JS to progressively enhance.
+3. **Determinism**: same input → same output (seed is fixed).
+4. **Increment-friendly**: these changes trigger the relevant pages to rebuild (hash includes these inputs):
+   - content files `source/**/*.md`
+   - template files `.xiaoyi-ssg/templates/**/*.html`
+   - template manifest `.xiaoyi-ssg/template-manifest.json`
+   - design tokens `.xiaoyi-ssg-design-tokens.json`
+   - config `config.yml`
+   - content types `.xiaoyi-ssg/content-types.json`
+   - interaction manifest `.xiaoyi-ssg/interactions.manifest.json`
+   - interaction modules `.xiaoyi-ssg/assets/interactions/*.js`
+   - interaction data `.xiaoyi-ssg/assets/data/*.json`
+   - style/script `.xiaoyi-ssg/assets/style.css`, `.xiaoyi-ssg/assets/script.js`
+5. **dev server injection**: only dev mode injects the SSE script; build output does not.
+6. **ESM modules**: all `.js` files use `import`/`export`; `package.json` has `"type": "module"`.
+7. **No hardcoded template set**: `render.js` is fully driven by `template-manifest.json`; it does not hardcode list/detail/index branches.

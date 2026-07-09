@@ -20,7 +20,7 @@
     "source_skill": {
       "type": "string",
       "minLength": 1,
-      "description": "Actual design source used, e.g. popular-web-designs/stripe, claude-design, user/DESIGN.md, reference-url/example.com, or self-extracted"
+      "description": "Actual design source used. Must be 'frontend-design' (the mandatory single source). 'self-extracted' is only accepted after explicit --allow-self-extracted override."
     },
     "source_ref": {
       "type": "string",
