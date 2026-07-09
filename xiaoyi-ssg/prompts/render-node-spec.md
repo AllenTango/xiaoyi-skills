@@ -252,12 +252,12 @@ AI 生成完 pipeline 后，**必须跑以下 5 步检查**才能声明成功：
 
 ### 设计系统来源必检
 
-生成 `assets/style.css` 之前，AI 必须**先调用** Hermes 设计 skill 拿到真实 token：
+生成 `assets/style.css` 之前，AI 必须先加载一个真实设计来源并规范化到 `.xiaoyi-ssg-design-tokens.json`：
 
-1. **必检 1**：生成的 `.xiaoyi-ssg-design-tokens.json` 必须含 `source_skill` 字段，指向实际调用的 skill（如 `popular-web-designs/stripe` 或 `claude-design`）。不允许为空或伪造。
+1. **必检 1**：`.xiaoyi-ssg-design-tokens.json` 必须含非空 `source_skill` 字段，指向实际加载的来源（如 `popular-web-designs/stripe`、`claude-design`、`design-md`、`user/DESIGN.md`、`reference-url/example.com` 或 `self-extracted`）。
 2. **必检 2**：`grep -c 'source_skill' <SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` ≥ 1。
-3. **必检 3**：如果用户指定了品牌（如「像 Stripe」），`source_skill` 必须以 `popular-web-designs/<brand>.md` 结尾。
-4. **必检 4**：CSS 字体栈必须直接源自 design skill 的 "Hermes Implementation Notes" 段（如 Inter / JetBrains Mono / Anthropic Serif 等），不允许 AI 重新设计。
+3. **必检 3**：如果用户指定了品牌（如「像 Stripe」），`source_skill` 必须包含该品牌名，例如 `popular-web-designs/stripe`。
+4. **必检 4**：CSS 字体栈、主色、圆角和动效必须能追溯到 `source_skill` / `source_ref` 和 `normalization_notes`，不允许 AI 重新设计。
 
 ---
 

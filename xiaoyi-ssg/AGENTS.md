@@ -15,9 +15,9 @@
 1. **单一入口**：`/xiaoyi-ssg` 是唯一 slash 命令。AI 通过对话理解用户意图并执行相应动作。
 2. **生成而非解析**：不再有固定模板。**初始化/主题变更/内容类型变更时，AI 生成完整渲染管线**写入 `<PIPELINE_DIR>`。
 3. **管线自运行**：后续 `build` 由用户直接运行 `node <PIPELINE_DIR>/render.js`，**无需 AI 参与**，保证确定性、可复现、可 CI/CD。
-4. **设计系统持久化**：`<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` 记录完整设计 token，管线生成时内联到模板/CSS，运行时不再解析。
+4. **设计系统持久化**：`<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` 记录完整设计 token 和 `source_skill` 来源，管线生成时内联到模板/CSS，运行时不再解析。
 5. **Skill 无状态**：不写 `<SKILL_DIR>/state.json`。站点定位靠「从 cwd 向上找 config.yml」。
-6. **对话驱动设计**：设计灵感来自用户对话描述、参考链接、截图，**无内置主题/参考库**。
+6. **设计来源委派**：设计 token 优先来自用户指定或客户端可用的 design skill / Markdown design source；用户对话、参考链接、截图用于选择或调整来源，不在本 skill 内维护硬编码主题库。
 7. **Node.js 优先**：安装本 skill 需 `npx skills add`（依赖 Node.js），用户环境必有 Node.js，故渲染管线基于 Node.js。
 8. **交互不是附属品**：网站需要搜索、筛选、主题切换、灯箱、表单校验、播放器、图表、地图等行为时，必须生成静态托管兼容的浏览器 JS、数据文件和 fallback，不得为了“纯静态”删减必要交互。
 9. **保护 source 内容**：`source/` 是用户内容区。除 INIT/NEW_CONTENT/CONTENT_EDIT/DEFINE_CONTENT_TYPE 中明确允许的新增目录或指定文件修改外，REGENERATE_PIPELINE、STYLE、INTERACTION、BUILD、DEV、PREVIEW、DIAGNOSE 均不得覆盖、删除、格式化或批量重写 `source/**/*.md` 与 `source/_media/**`。
@@ -32,7 +32,7 @@
 | `prompts/pipeline-generation.md` | 指导 AI 生成完整渲染管线 | 管线结构/模板策略/CSS生成策略变更 |
 | `prompts/reference-analysis.md` | 指导 AI 分析参考站点提取设计意图 | 分析维度/输出格式变更 |
 | `prompts/content-type-definition.md` | 指导 AI 引导用户定义内容类型 | 内容类型定义流程/字段类型变更 |
-| `prompts/design-system-extraction.md` | 指导 AI 融合生成 design-tokens | Token 结构/生成策略变更 |
+| `prompts/design-system-extraction.md` | 指导 AI 将外部设计来源规范化为 xiaoyi design-tokens | Token 结构/规范化策略变更 |
 | `prompts/render-node-spec.md` | 渲染脚本（Node.js）完整规格 | 渲染脚本结构/算法变更 |
 | `schemas/design-tokens.json` | 设计 token JSON Schema（校验用） | Token 字段增减 |
 | `schemas/config.schema.json` | 配置 schema 模板（管线生成时裁剪） | 配置字段增减 |
@@ -117,9 +117,9 @@
    - 生成 config.yml（含 site 基础信息、pages 顺序、per_page 等）
 
 5. 生成设计系统：
-   - 融合：参考站提取的 design-intent + 用户偏好描述
-   - 按 prompts/design-system-extraction.md 生成完整 .xiaoyi-ssg-design-tokens.json
-   - 必含字段：color, typography, layout, component, motion, seed
+   - 读取 references/frontend-design-integration.md 选择并加载 design skill / Markdown design source
+   - 按 prompts/design-system-extraction.md 规范化为完整 .xiaoyi-ssg-design-tokens.json
+   - 必含字段：source_skill, color, typography, layout, component, motion, seed
 
 6. 生成渲染管线：
    - 读取 prompts/pipeline-generation.md + prompts/render-node-spec.md
@@ -343,8 +343,10 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 ```json
 {
   "version": 1,
-  "theme_ref": "reference-url|custom",
-  "theme_manifesto_hash": "sha256:...",
+  "source_skill": "popular-web-designs/stripe",
+  "source_ref": "skill:popular-web-designs/templates/stripe.md",
+  "theme_ref": "reference-url|custom|brand-name",
+  "theme_manifesto_hash": "sha256:<64 lowercase hex chars>",
   "tokens": {
     "color": {
       "background": "#faf9f7",
@@ -418,6 +420,9 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
       "muted": "#8a8680"
     }
   },
+  "normalization_notes": [
+    "Record any field inferred while converting the loaded design source to the xiaoyi schema."
+  ],
   "seed": 123456789
 }
 ```
@@ -477,12 +482,12 @@ dev server 逻辑（详见 prompts/render-node-spec.md）：
 {
   "version": 1,
   "generated_at": "2025-01-15T14:30:00Z",
+  "source_skill": "popular-web-designs/stripe",
   "theme_ref": "reference-url",
-  "theme_manifesto_hash": "sha256:...",
+  "theme_manifesto_hash": "sha256:<64 lowercase hex chars>",
   "tokens_hash": "sha256:...",
   "content_types_hash": "sha256:...",
   "templates": [
-    "base.html",
     "base.html",
     "landing.html",
     "list.html",

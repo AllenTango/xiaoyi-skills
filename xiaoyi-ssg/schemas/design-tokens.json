@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "version",
+    "source_skill",
     "theme_ref",
     "theme_manifesto_hash",
     "tokens",
@@ -15,6 +16,15 @@
       "type": "integer",
       "const": 1,
       "description": "Schema version"
+    },
+    "source_skill": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Actual design source used, e.g. popular-web-designs/stripe, claude-design, user/DESIGN.md, reference-url/example.com, or self-extracted"
+    },
+    "source_ref": {
+      "type": "string",
+      "description": "Optional concrete path, URL, skill resource, or note for the loaded design source"
     },
     "theme_ref": {
       "type": "string",
@@ -350,6 +360,13 @@
             }
           }
         }
+      }
+    },
+    "normalization_notes": {
+      "type": "array",
+      "description": "Notes for values inferred while converting the design source into the xiaoyi token schema",
+      "items": {
+        "type": "string"
       }
     },
     "seed": {

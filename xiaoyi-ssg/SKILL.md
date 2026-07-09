@@ -82,8 +82,8 @@ Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `publ
 
 ## Intent Routing
 
-- **init / new site**: guide site creation, content types, design direction, then read `prompts/content-type-definition.md`, `prompts/template-manifest-generation.md`, `prompts/design-system-extraction.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
-- **style/theme/reference change**: preserve `source/`; update design tokens and regenerate only the pipeline. Read `prompts/reference-analysis.md` if a reference URL/screenshot is involved, then `prompts/design-system-extraction.md`, `prompts/template-manifest-generation.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
+- **init / new site**: guide site creation, content types, design direction, then read `prompts/content-type-definition.md`, `prompts/template-manifest-generation.md`, `references/frontend-design-integration.md`, `prompts/design-system-extraction.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
+- **style/theme/reference change**: preserve `source/`; update design tokens and regenerate only the pipeline. Read `prompts/reference-analysis.md` if a reference URL/screenshot is involved, then `references/frontend-design-integration.md`, `prompts/design-system-extraction.md`, `prompts/template-manifest-generation.md`, `prompts/pipeline-generation.md`, and `prompts/render-node-spec.md`.
 - **content type add/change**: read `prompts/content-type-definition.md`; update `.xiaoyi-ssg/content-types.json` and `.xiaoyi-ssg/template-manifest.json` (add/extend collection); create only missing `source/_<type>/` directories.
 - **interaction add/change**: preserve `source/`; update templates/assets/interactions/data/manifest as needed. Read `prompts/pipeline-generation.md` and `prompts/render-node-spec.md`.
 - **new content**: create one content file under the matching `source/_<type>/`; do not regenerate the pipeline unless the content model changed.
@@ -163,7 +163,7 @@ For full conventions see `templates/conventions.md`.
 
 ## Design System: Always Delegate to Design Skills (Client-Agnostic)
 
-When generating `assets/style.css`, you must NOT invent design tokens from scratch. Delegate to whichever design skills your AI client provides — the examples below cover the most common ecosystems:
+When generating `assets/style.css`, you must NOT invent design tokens from scratch. First load a design source from whichever design skills or plain Markdown references your AI client provides, then normalize that source into `.xiaoyi-ssg-design-tokens.json` using `prompts/design-system-extraction.md`.
 
 | User intent | Hermes Agent | Claude Code | OpenAI Codex CLI | Cursor | Aider / Continue.dev |
 |------------|--------------|-------------|------------------|--------|-----------------------|
@@ -172,9 +172,9 @@ When generating `assets/style.css`, you must NOT invent design tokens from scrat
 | Persist tokens as a formal DESIGN.md spec file | `design-md` | local skill or plugin | local skill | local rule | local rule |
 | Fallback (no design skill available) | Read `popular-web-designs/templates/claude.md` directly as a reference file | Same — it's plain Markdown | Same | Same | Same |
 
-The fallback path is important: even if your client has no design skill installed, the 54 brand templates in `popular-web-designs/templates/*.md` are plain Markdown files an AI can read directly with `cat` / `Read` / file tools. They include complete design tokens and a "Hermes Implementation Notes" block with copy-paste-ready CSS variables and Google Fonts `<link>` tags.
+The fallback path is important: even if your client has no design skill installed, the 54 brand templates in `popular-web-designs/templates/*.md` are plain Markdown files an AI can read directly with `cat` / `Read` / file tools when those files are available in the user's environment. They include complete design tokens and implementation notes with CSS variables and font links.
 
-Full dispatch rules and the 54-brand list live in `references/frontend-design-integration.md`. The reference file is intentionally thin — it lists *which skill to call*, never *what CSS to write* — so single-source-of-truth design intent flows from whichever design skill your client provides into your pipeline.
+Full dispatch rules and the 54-brand list live in `references/frontend-design-integration.md`. The reference file is intentionally thin — it lists *which design source to load*, never *what CSS to write* — so single-source-of-truth design intent flows from whichever design source your client provides into your pipeline.
 
 The internal `references/frontend-design-integration.md` previously contained hand-written CSS snippets; those have been removed in favor of strict delegation. Do not reintroduce hardcoded CSS, color tokens, or font stacks in this skill.
 

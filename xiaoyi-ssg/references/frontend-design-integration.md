@@ -45,28 +45,46 @@
    - spacing scale
    - 圓角 / 陰影 / 動效 token
    - 暗色 / 淺色主題（如支持）
-4. **寫入 `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json`** —— token 字段名遵守 popular-web-designs 該品牌的 schema：
+4. **规范化并写入 `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json`** —— 先读取 `prompts/design-system-extraction.md`，再将设计来源转换为 `schemas/design-tokens.json` 定义的 xiaoyi token schema：
    ```json
    {
+     "version": 1,
      "source_skill": "popular-web-designs/stripe",
-     "color": { "bg": "#ffffff", "fg": "#0a2540", "accent": "#635bff", ... },
-     "typography": { "font_sans": "...", "font_mono": "...", ... },
-     ...
+     "source_ref": "skill:popular-web-designs/templates/stripe.md",
+     "theme_ref": "stripe",
+     "theme_manifesto_hash": "sha256:<64 lowercase hex chars>",
+     "tokens": {
+       "color": {
+         "background": "#ffffff",
+         "text": "#0a2540",
+         "accent": "#635bff"
+       },
+       "typography": {
+         "fontBody": "copied from the loaded design source"
+       }
+     },
+     "darkMode": {
+       "color": {
+         "background": "#0a0a0a",
+         "text": "#f6f9fc"
+       }
+     },
+     "seed": 123456789
    }
    ```
    （`source_skill` 字段記錄 token 出處，方便日後追溯。其他 client 用「`<client>/<skill>`」格式，例如 `claude-code/claude-design`、`aider/templates-claude`。）
-5. **生成 CSS** —— 用 popular-web-designs 的「Hermes Implementation Notes」中已提供的 CDN font link + font-family stack + 具體顏色值，**直接抄過去**而唔是自己重新設計。
+5. **生成 CSS** —— 使用规范化后的 xiaoyi tokens，并把设计来源中提供的 font link、font-family stack、颜色值和组件规则作为唯一设计依据；可以适配到当前站点结构，但唔可以重新设计一套视觉系统。
 6. **可選：如用戶要 DESIGN.md 持久化** —— 額外調用 `design-md` skill 生成正式 spec 文件。
 
 ## Fallback（無 design skill 時）
 
 如果用戶明確說「沒有品牌偏好 / 你來設計」但又沒指定任何設計 skill：
-1. 直接用 file-read 命令讀 `popular-web-designs/templates/claude.md`（Anthropic Claude 設計系統，係當前可訪問嘅最完整 design template）
+1. 如本机可访问 `popular-web-designs/templates/claude.md`，直接用 file-read 命令读取它（Anthropic Claude 設計系統，係常见的完整 design template）
 2. 視為「讀取 Markdown 參考文檔」而非「調用 skill」——**功能上等價**
 3. 跟住上面 §流程 step 3-5 同樣處理
 
 如果完全冇任何 design reference 可用：
-1. 立即 fallback 到 skill 自身 `prompts/design-system-extraction.md`（基於對話描述提取 design intent）
+1. 读取 `prompts/design-system-extraction.md`，基于用户明确描述做最小 self-extracted 规范化
 2. 將 `source_skill` 字段標記為 `"self-extracted"` 表示 AI 自己生成（**warning**：唔係 brand 真實設計）
 
 ## 用戶可選的 brand preference 字段

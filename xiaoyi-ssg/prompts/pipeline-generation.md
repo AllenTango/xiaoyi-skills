@@ -3,13 +3,13 @@
 > ⚠️ **必读前置**：
 > 1. [`templates/conventions.md`](../templates/conventions.md) — 模板语法、变量绑定、custom fields 强制约定
 > 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — render.js 完整规格
-> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — **CSS 不能自製！** 必須委派給 Hermes 已安裝嘅 `popular-web-designs` / `claude-design` / `design-md` skill，照搬佢哋嘅設計 token
+> 3. [`references/frontend-design-integration.md`](../references/frontend-design-integration.md) — **CSS 不能自製！** 必須先載入可用的 design skill 或 plain Markdown design source，再用 `prompts/design-system-extraction.md` 规范化为 xiaoyi tokens
 
 ## 设计系统强制委派（重要！）
 
-**绝对不要**在 AI 自己脑子里"設計" CSS / color / typography token。**必须**先调用以下任一已安裝嘅 Hermes skill（用户已装）拿真实设计系统：
+**绝对不要**在 AI 自己脑子里"設計" CSS / color / typography token。**必须**先调用或读取一个真实设计来源，再将它规范化成 `.xiaoyi-ssg-design-tokens.json`：
 
-| 用户需求 | 用呢個 skill（已装） | 命令 |
+| 用户需求 | 推荐设计来源 | 载入方式示例 |
 |---------|---------------------|------|
 | 「像 Stripe / Linear / Vercel / Anthropic 風」等已知品牌 | `popular-web-designs` | `skill_view(name="popular-web-designs", file_path="templates/<brand>.md")` |
 | 「原創設計 / 你自己設計」 | `claude-design` | `skill_view(name="claude-design")` |
@@ -17,7 +17,7 @@
 
 54 個品牌模板清單：airbnb / airtable / apple / bmw / cal / claude / clay / clickhouse / cohere / coinbase / composio / cursor / elevenlabs / expo / figma / framer / hashicorp / ibm / intercom / kraken / linear.app / lovable / MiniMax / mintlify / miro / mistral.ai / mongodb / notion / nvidia / ollama / opencode.ai / pinterest / posthog / raycast / replicate / resend / revolut / runwayml / sanity / sentry / spacex / spotify / stripe / supabase / superhuman / together.ai / uber / vercel / voltagent / warp / webflow / wise / x.ai / zapier。
 
-完整流程見 [`references/frontend-design-integration.md`](../references/frontend-design-integration.md)。
+如果当前 client 没有 `skill_view`，但本机有对应 Markdown 文件，可以直接读取该文件。完整流程見 [`references/frontend-design-integration.md`](../references/frontend-design-integration.md)。
 
 指导 AI 生成完整渲染管线（`.xiaoyi-ssg/` 目录下所有文件）。
 
@@ -25,7 +25,8 @@
 
 ```json
 {
-  "tokens": { ... },           // 完整 design-tokens.json 的 tokens 对象
+  "design_tokens": { ... },    // 完整 .xiaoyi-ssg-design-tokens.json，对应 schemas/design-tokens.json
+  "tokens": { ... },           // design_tokens.tokens 的便捷别名
   "content_types": { ... },    // content-types.json 完整内容
   "config": { ... },           // config.yml 解析后的对象
   "site_language": {           // inferred from the user's request unless explicitly overridden
@@ -171,7 +172,9 @@ AI 生成时的决策规则：
 - Do not emit separators before the first item or after the last item.
 - Filter out empty breadcrumb items before rendering.
 
-### 6. CSS 变量映射（内联到模板/CSS）
+### 6. CSS 变量映射（来自规范化 tokens）
+
+CSS 变量只能映射 `.xiaoyi-ssg-design-tokens.json` 中的 xiaoyi schema 字段。字体链接、字体栈、颜色、圆角、阴影、动效等设计值必须能追溯到 `design_tokens.source_skill` / `design_tokens.source_ref`。不要在这里发明新的品牌色或字体。
 
 ```css
 :root {
@@ -215,7 +218,6 @@ AI 生成时的决策规则：
 
 @media (prefers-color-scheme: dark) {
   :root {
-    {
     --color-bg: <tokens.darkMode.color.background>;
     --color-text: <tokens.darkMode.color.text>;
     --color-border: <tokens.darkMode.color.border>;
@@ -237,11 +239,13 @@ AI 生成时的决策规则：
 
 ### 7. 组件样式生成（基于 tokens.component）
 
-将 tokens.component 的描述性字符串转为具体 CSS 规则。例如：
+将 tokens.component 的描述性字符串转为具体 CSS 规则。规则必须是对已加载设计来源的适配，不是重新设计。例如：
 
 - `card: "no-border, whitespace-separation"` → `.card { border: none; margin-bottom: var(--rhythm); }`
 - `nav: "text-only, uppercase, letter-spacing-0.1em"` → `.nav a { text-transform: uppercase; letter-spacing: 0.1em; }`
 - `button: "ghost, accent-text, hairline-border"` → `.btn { background: transparent; color: var(--color-accent); border: 1px solid var(--color-border); }`
+
+如果 `tokens.normalization_notes` 或设计来源提供了更具体的组件 CSS，优先使用那些具体规则。
 
 ### 8. script.js — 必需交互
 
