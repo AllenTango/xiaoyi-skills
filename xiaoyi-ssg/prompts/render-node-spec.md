@@ -295,6 +295,44 @@ await build(false);
 - **Watch manifest change**: `template-manifest.json` change triggers full re-expansion + render
 - **SSE injection**: only dev mode injects; build output does not
 
+### Mandatory: Port Auto-Increment
+
+The dev server MUST auto-increment port when the configured port is in use. Do NOT hardcode a single port. Required behaviour:
+
+```javascript
+function startServerWithPortRetry(server, basePort, maxAttempts = 20) {
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+    const tryListen = (port) => {
+      server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
+          attempt++;
+          console.warn(`⚠️  Port ${port} in use, trying ${port + 1}...`);
+          tryListen(port + 1);
+        } else {
+          reject(err);
+        }
+      });
+      server.once('listening', () => {
+        const actualPort = server.address().port;
+        if (actualPort !== basePort) {
+          console.log(`🌐 Dev server running at http://localhost:${actualPort} (port ${basePort} was occupied)`);
+        } else {
+          console.log(`🌐 Dev server running at http://localhost:${actualPort}`);
+        }
+        resolve(actualPort);
+      });
+      server.listen(port);
+    };
+    tryListen(basePort);
+  });
+}
+```
+
+The AI MUST emit this exact pattern (or a functional equivalent) into the generated `dev.js`. A hardcoded `server.listen(port, …)` without retry is forbidden.
+
+The default base port is `config.dev.port` (typically `3000`). On conflict, increment up to `basePort + maxAttempts`. If all attempts fail, exit with non-zero code and a clear message.
+
 ---
 
 ## Interaction Data Generation (buildExtras)

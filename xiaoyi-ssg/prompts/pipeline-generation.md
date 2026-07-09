@@ -158,6 +158,21 @@ AI decision rules:
 - No inline styles, semantic class + CSS variables only
 - Load `assets/script.js` before `</body>`
 
+**Mandatory: asset path contract**
+
+The generated `base.html` MUST reference CSS and JS using a path that works regardless of where the rendered page is served from. The two accepted patterns:
+
+- Root-relative with leading `/`: `<link rel="stylesheet" href="/assets/style.css">` and `<script src="/assets/script.js" defer></script>`
+- URL-prefixed: `<link rel="stylesheet" href="<%= site.url %>/assets/style.css">` (when `site.url` is set in config)
+
+Both are acceptable. Do NOT use:
+- Relative paths without leading `/` such as `assets/style.css` (they break under sub-paths like `/blog/post/`)
+- Markdown-style paths such as `./assets/style.css`
+
+After emitting `base.html`, the AI MUST verify by reading back the file and confirming that exactly one `<link rel="stylesheet"` and one `<script src="…script.js…"` tag exist, both pointing at an `/assets/…` URL. If verification fails, the AI MUST regenerate `base.html` until the contract is satisfied.
+
+The CSS file MUST define `:root { --color-* ... --font-* ... }` from the design tokens. The pipeline MUST regenerate the `:root` block whenever tokens change; do not cache stale token values.
+
 **page templates** — each page template declared in manifest
 - List pages (`forEach: "collections"` + `forEach: "pagination"`): page title, breadcrumb, card grid, pagination control, search/filter controls (if declared in manifest)
 - Detail / doc pages (`forEach: "items"`): breadcrumb, title, date, tags, cover, body, prev/next (optional), tree sidebar (if `tree: true`)

@@ -18,6 +18,12 @@ tested: true
 - [x] 真实 INIT_PIPELINE 测试（Case A blog + Case B portfolio）
 - [x] 真实截图验证（4 张 / case，dark/light 都通过）
 - [x] 发现并修复 9 个 bug（v1.0.0 阶段）
+- [x] v1.0.0 后扩展：TAKE_OVER_EXISTING 拆分为三个子流程
+  - Sub-flow A：xiaoyi-ssg → xiaoyi-ssg（已存在项目合并）
+  - Sub-flow B：其他静态站 → xiaoyi-ssg（Hugo/Jekyll/Hexo/Eleventy/Astro/Next 静态导出/纯 HTML 等任意静态站迁入）
+  - Sub-flow C：未知 / 非静态站目录（必须先向用户确认）
+- [x] v1.0.0 后扩展：site-root 标记由“枚举生成器”改为“通用规则”，不再因未知生成器而漏判
+- [x] v1.0.0 后扩展：dev.js 强制端口自动递增、CSS 路径契约、示例 + README、交互语言分离规则
 - [x] templates/conventions.md（强制 Eta 语法 / 变量绑定）
 - [x] 5 步必做自测条款
 - [x] SKILL.md Common Pitfalls 段

@@ -46,6 +46,24 @@
 - Punctuation: English content uses half-width; the Chinese exceptions (Class A preamble + Class B docs) use full-width.
 - One file, one language. No half-English half-Chinese within a single paragraph.
 
+### 2a. AI Reply Language (separate rule)
+
+The above rule controls **files written by the AI**. A separate rule governs
+**how the AI speaks to the user in chat**:
+
+- The AI MUST reply in the same language the user used in the most recent
+  message. If the user switches languages mid-thread, the AI follows the new
+  language immediately.
+- The reply-language rule applies to conversational text only: status lines,
+  explanations, questions, error messages, suggestions. It does NOT override
+  the class-based documentation language rule above.
+- File contents the AI writes are still governed by §2: Class A files stay in
+  English, Class B files stay in Simplified Chinese, generated user-site
+  content follows `config.site.language`.
+- If the user's language is ambiguous, default to Simplified Chinese for
+  users in the CN locale and English otherwise; ask only when the ambiguity
+  materially affects the answer.
+
 ### 3. Client Compatibility
 
 - This skill does **not** emphasize client-agnostic. SKILL.md and AGENTS.md do not expand a 5+ client adapter matrix.
@@ -73,7 +91,13 @@
 ## Path Conventions
 
 - **`<SKILL_DIR>`**: absolute path of this skill's own directory; varies by install location. Use this placeholder throughout this document for any reference to the skill's own files.
-- **`<SITE_ROOT>`**: the site root the user is currently operating on (contains `config.yml`). **Not inside `<SKILL_DIR>`**. AI locates it per session by walking up from the current working directory to find `config.yml`.
+- **`<SITE_ROOT>`**: the site root the user is currently operating on. **Not inside `<SKILL_DIR>`**. The AI locates it per session by walking up from the current working directory. The first directory containing a recognized site marker becomes `<SITE_ROOT>`. If none is found, the cwd itself is the candidate root (init may still proceed).
+- **Site-root markers** (a project of *any* static-site kind matches here — the list is intentionally not enumerated by generator name):
+  1. `config.yml` + sibling `.xiaoyi-ssg/` → existing xiaoyi-ssg project.
+  2. Any other YAML/JSON/TOML file at the root whose filename or top-level keys indicate it is a site configuration (`hugo.toml`, `_config.yml`, `pelicanconf.py`, `eleventy.config.js`, `astro.config.*`, etc.). Detection rule: a recognized root-level config file in a well-known convention (leading underscore, known generator name, or a top-level key such as `baseURL` / `title` / `params` / `output: export` / `site`).
+  3. `package.json` with a known static-site generator dependency (`hexo`, `@11ty/eleventy`, `astro`, `next` with `output: "export"`, `gatsby`, `vuepress`, etc.).
+  4. `index.html` / `index.htm` at the root plus one of: a `public/`, `dist/`, `_site/`, `output/` directory containing generated HTML, OR a sibling content directory such as `content/`, `posts/`, `pages/`, `src/`.
+- **Hard principle**: the marker rules are *examples*, not an exhaustive allow-list. If the AI sees an unknown but obvious site configuration file at the root of a directory the user pointed at, treat that directory as `<SITE_ROOT>` and proceed. If the AI is unsure whether a directory is actually a static site project, ask the user before assuming.
 - **`<PIPELINE_DIR>`**: `<SITE_ROOT>/.xiaoyi-ssg/` — the generated rendering pipeline directory.
 
 ---
@@ -141,17 +165,28 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 ```
 1. Pre-flight: load frontend-design (see above).
 2. Locate site root:
-   - Walk up from cwd to find config.yml
-   - Found → <SITE_ROOT> = that directory
-   - Not found → recognize as INIT_PIPELINE intent; guide the user to create a new site
+   - Walk up from cwd and look for any recognized site-root marker
+     (see "Site-root markers" near the top of this file).
+   - Match found → <SITE_ROOT> = that directory; record which marker
+     matched and whether it is xiaoyi-ssg or another static site
+     generator.
+   - No match → cwd is the candidate root; continue to step 3 with
+     intent routing; do NOT yet write any files.
 3. Read context (if site exists):
-   - config.yml
-   - .xiaoyi-ssg-design-tokens.json (if exists)
-   - .xiaoyi-ssg/content-types.json (if exists)
-   - source/**/*.md list (grouped by content type)
-   - .xiaoyi-ssg/pipeline-manifest.json (if exists, contains generation metadata)
+   - For xiaoyi-ssg sites: config.yml + .xiaoyi-ssg-design-tokens.json +
+     .xiaoyi-ssg/content-types.json + source/**/*.md list +
+     .xiaoyi-ssg/pipeline-manifest.json.
+   - For other static sites: read the generator's own config file
+     (hugo.toml, _config.yml, astro.config.*, etc.) and the existing
+     content tree, but DO NOT modify them. Use them only to inform the
+     user-facing takeover banner.
+   - For unknown / no-site directories: ask the user before assuming
+     <SITE_ROOT>.
 4. Recognize intent (user input + context):
-   - INIT_PIPELINE: no config.yml, or user explicitly says "new site/project"
+   - INIT_PIPELINE: no marker matched, or user explicitly says "new site/project"
+   - TAKE_OVER_EXISTING: site marker matched; route to Sub-flow A
+     (xiaoyi-ssg), Sub-flow B (other static site migration), or Sub-flow
+     C (unknown / not a static site) per the takeover spec
    - RUN_BUILD: "build/generate/publish/preview" with pipeline present
    - RUN_DEV: "dev/realtime/watch" with pipeline present
    - REGENERATE_PIPELINE: "switch style/adjust layout/change color/theme/add content type/change content type"
@@ -178,6 +213,7 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 | "change this article's title to..." | CONTENT_EDIT | Need to locate file |
 | "preview it" | PREVIEW | After build or directly via dev |
 | "check if there is any problem" | DIAGNOSE | Scan logic |
+| "switch to a darker theme", "add a project type", "regenerate", or any phrasing on a directory that already has a recognized site marker | TAKE_OVER_EXISTING (Sub-flow A if xiaoyi-ssg, Sub-flow B if another static site) | Site marker must be detected first |
 
 **Ambiguity handling**: if intent is unclear, the AI proactively asks (e.g., "Do you want to adjust the visual style, or add a new content type?").
 
@@ -218,6 +254,8 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
    - source/ directory structure (create missing _<type>/ per content-types; create source/_media/; do not overwrite existing files)
    - <PIPELINE_DIR>/ (render.js, dev.js, package.json, templates/, assets/, config.schema.json, pipeline-manifest.json)
    - .gitignore (ignore public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/)
+   - **README.md at <SITE_ROOT>**: brief, in the inferred site language, explaining directory layout, how to add content, and how to run build / dev. Required even when no user-authored content exists yet.
+   - **One demo `*.md` per content type** in each `source/_<type>/` directory (only if empty) so the site has at least one renderable item per type. Each demo file MUST include a valid frontmatter matching the content-type schema and at least three short paragraphs of body content.
 9. Install dependencies and first build:
    - Run `npm install` in <PIPELINE_DIR>/
    - Run first build: `cd .xiaoyi-ssg && npm run build`
@@ -364,6 +402,114 @@ Input: URL provided by the user
    - Components: card, nav, button, form, pagination, breadcrumb styles
    - Motion: entrance, hover, focus, page transition tendency
 3. Output design-intent.json for downstream design system generation
+```
+
+#### TAKE_OVER_EXISTING (Take Over or Migrate an Existing Static Site)
+
+```
+Trigger: walking up from cwd finds a directory with any recognized site
+marker (see "Site-root markers" above). The user requests a /xiaoyi-ssg
+action. The AI MUST recognize the existing project and route to the
+matching sub-flow below — never silently create a sibling project, never
+overwrite the user's existing files.
+
+Sub-flow A — xiaoyi-ssg → xiaoyi-ssg (already our pipeline):
+
+1. Use <SITE_ROOT> = the directory containing config.yml + .xiaoyi-ssg/.
+2. Read pipeline-manifest.json under .xiaoyi-ssg/ to recover last
+   generation metadata (tokens hash, content-types hash, generation time,
+   renderer version, source_skill).
+3. Read all existing files the user owns:
+   - config.yml
+   - .xiaoyi-ssg-design-tokens.json
+   - .xiaoyi-ssg/content-types.json
+   - .xiaoyi-ssg/template-manifest.json
+   - All source/_<type>/*.md (grouped by collection)
+4. Decide action by user phrasing:
+   - Style/theme change → update .xiaoyi-ssg-design-tokens.json (preserve
+     custom fields the user added), then REGENERATE_PIPELINE.
+   - Content type add → DEFINE_CONTENT_TYPE then REGENERATE_PIPELINE.
+   - Content edit → CONTENT_EDIT (do NOT regenerate the pipeline).
+   - Build / dev / preview → RUN_BUILD / RUN_DEV / PREVIEW without
+     touching any pipeline source file.
+5. NEVER overwrite existing user content. NEVER recreate source/_<type>/
+   that already exists. NEVER bump version unless the user asks.
+
+Sub-flow B — other static site → xiaoyi-ssg (migration):
+
+Trigger: site-root marker matched but the directory is NOT a xiaoyi-ssg
+project (no config.yml + .xiaoyi-ssg/ pair). Examples include Hugo,
+Jekyll, Hexo, Eleventy, Astro, Next.js static export, plain static HTML,
+or any unfamiliar static site the AI recognizes.
+
+Hard rules (these override convenience):
+
+a. The user's existing files are SACRED. The AI MUST NOT modify, delete,
+   reformat, or move any file the existing site relies on. Specifically:
+   - Do NOT touch the existing generator's config file (hugo.toml,
+     _config.yml, astro.config.*, etc.).
+   - Do NOT touch the existing generator's content tree (content/,
+     _posts/, src/content/, app/, etc.).
+   - Do NOT touch the existing build output (public/, dist/, _site/,
+     out/, build/) until the user has confirmed migration is complete
+     and the old build can be replaced.
+b. xiaoyi-ssg artifacts are written to a NEW sibling location to keep
+   both worlds operational during migration:
+   - xiaoyi-ssg config: <SITE_ROOT>/config.yml (only if absent)
+   - xiaoyi-ssg tokens: <SITE_ROOT>/.xiaoyi-ssg-design-tokens.json
+   - xiaoyi-ssg pipeline: <SITE_ROOT>/.xiaoyi-ssg/
+   - xiaoyi-ssg content: <SITE_ROOT>/source/_<type>/ (new tree, parallel
+     to the existing content tree, NOT replacing it)
+   - xiaoyi-ssg build output: <SITE_ROOT>/.xiaoyi-ssg-build/ by default
+     (NOT public/, so it does not collide with Hugo's / Jekyll's public
+     / Jekyll's _site, etc.). The user can later point their CDN at
+     this directory and delete the old generator's output.
+c. If <SITE_ROOT>/config.yml already exists from a prior xiaoyi-ssg run
+   that was abandoned, ask the user whether to overwrite, merge, or
+   keep the old file before writing a new one.
+d. If the user explicitly says "migrate all my old posts to source/_posts",
+   the AI copies the content files into source/_<type>/ with frontmatter
+   converted to xiaoyi-ssg's schema. The originals are left in place.
+   If the user does NOT explicitly ask for content migration, the AI
+   only generates the pipeline scaffolding and waits.
+
+Flow:
+
+1. Detect the existing generator by reading its config file (e.g.,
+   hugo.toml's `baseURL`/`title` keys, _config.yml's `name`/`plugins`
+   keys, package.json's dependencies) — but DO NOT add generator-
+   specific parsers to the xiaoyi-ssg skill. Content migration is a
+   per-call ad-hoc conversion the AI performs in dialogue, not a
+   feature the skill ships with.
+2. Print a takeover banner explaining:
+   - which generator was detected
+   - which files xiaoyi-ssg will create (config.yml, .xiaoyi-ssg/,
+     .xiaoyi-ssg-build/, source/) and which it will NOT touch
+   - that the old build is left in place until the user confirms
+3. Ask the user to confirm migration scope:
+   - Just the pipeline scaffolding (no content)
+   - Migrate content from <old-generator-content-tree> to
+     source/_<type>/ (one-time copy, originals untouched)
+   - Full migration including deleting the old build (only after
+     user has verified .xiaoyi-ssg-build/ works)
+4. Proceed with the chosen scope. The "REGENERATE_PIPELINE" step still
+   runs so .xiaoyi-ssg/ matches the rest of the skill, but it MUST
+   respect rule (a) above.
+
+Sub-flow C — unknown / not a static site:
+
+If the AI walks up and the candidate root does not satisfy any site
+marker, the AI MUST ask the user before treating cwd as <SITE_ROOT>.
+Possible reasons the directory may not be a site at all: it is the
+user's home directory, a docs folder for a single component, a random
+project. The user should explicitly say "this is the site" before the
+AI writes any xiaoyi-ssg files.
+
+In all sub-flows:
+
+- NEVER bump version unless the user asks.
+- ALWAYS print a banner so the user sees the takeover decision.
+- ALWAYS honour the user's existing files — read-only on their side.
 ```
 
 ---
