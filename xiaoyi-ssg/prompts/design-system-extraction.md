@@ -101,7 +101,7 @@ Write exactly one JSON object matching `schemas/design-tokens.json`:
       "pre": "description normalized from source",
       "media": "description normalized from source",
       "pagination": "description normalized from source",
-      "breadcrumb": "description normalized from source"
+      "breadcrumb": "optional; include only if the design source or site structure uses breadcrumb navigation"
     },
     "motion": {
       "entrance": "description normalized from source",
@@ -133,6 +133,7 @@ Write exactly one JSON object matching `schemas/design-tokens.json`:
 - Convert source token names into the xiaoyi schema; do not change the schema to match the source.
 - If the source provides only light mode, derive `darkMode.color` from source neutrals and record that derivation in `normalization_notes`.
 - If the source provides component CSS rather than component tokens, summarize each component style as a short descriptive string and let `pipeline-generation.md` map it to project CSS.
+- `tokens.component.breadcrumb` is optional. Include it only when breadcrumbs are intentionally part of the navigation design.
 - Generate `theme_manifesto_hash` from the loaded source content plus explicit user overrides. Use lowercase hex.
 - Keep values CSS-compatible and schema-compatible. Include units on lengths.
 

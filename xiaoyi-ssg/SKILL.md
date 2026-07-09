@@ -155,17 +155,19 @@ Do not use `process.cwd()` as the site root.
 
 Static output may include generated browser JavaScript. Do not remove necessary interaction to keep pages "purely static". Pinned npm dependencies are allowed when interactions materially need them; record them in `interactions.manifest.json`.
 
-Breadcrumb and nav URLs must be normalized. Visual breadcrumb separators must be generated in exactly one place (prefer CSS), never by URL data and template text at the same time.
+Navigation URLs must be normalized. Breadcrumb navigation is optional and should be generated only when the chosen site structure or design source calls for it.
 
-## Breadcrumb / URL Safety
+## Navigation / URL Safety
 
-- Keep URL paths and visual separators separate.
-- Never store `//` as breadcrumb data.
-- Do not render literal `/`, `//`, or separator text inside breadcrumb item data or template loops when CSS already provides separators.
-- Do not emit separators before the first item or after the last item.
+- Normalize nav, pagination, detail, index, and optional breadcrumb URLs with helper functions from `prompts/render-node-spec.md`.
+- Do not use breadcrumb navigation as a required design element. Header nav, section nav, sidebar nav, tabs, filters, previous/next links, or other patterns may be more appropriate.
+- If breadcrumbs are generated, keep URL paths and visual separators separate.
+- If breadcrumbs are generated, never store `//` as breadcrumb data.
+- If breadcrumbs are generated, do not render literal `/`, `//`, or separator text inside breadcrumb item data or template loops when CSS already provides separators.
+- If breadcrumbs are generated, do not emit separators before the first item or after the last item.
 - Normalize all internal paths with helper functions from `prompts/render-node-spec.md`.
 
-Preferred markup:
+Acceptable breadcrumb markup when breadcrumbs are intentionally used:
 
 ```html
 <nav aria-label="Breadcrumb">

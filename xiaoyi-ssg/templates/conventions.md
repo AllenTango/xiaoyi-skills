@@ -127,7 +127,7 @@ For list templates, the render pipeline passes both `collection` (string) and `c
 <% const name = collection; %>
 ```
 
-For the breadcrumb / page-title to read the friendly collection name, the data also exposes `collectionName` (mirrored from `collection`). Use it in copy:
+For page titles, labels, and optional navigation helpers to read the friendly collection name, the data also exposes `collectionName` (mirrored from `collection`). Use it in copy:
 
 ```html
 <h1><%= collectionName === 'post' ? 'Posts' : collectionName %></h1>

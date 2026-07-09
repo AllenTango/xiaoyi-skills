@@ -399,7 +399,7 @@ Input: URL provided by the user
    - Typography: heading / body / monospace stacks, scale
    - Spacing: container width, rhythm, gap, radius
    - Layout: column count, sidebar, header/footer style, hero
-   - Components: card, nav, button, form, pagination, breadcrumb styles
+   - Components: card, nav, button, form, pagination, and optional breadcrumb styles if the reference uses them
    - Motion: entrance, hover, focus, page transition tendency
 3. Output design-intent.json for downstream design system generation
 ```
@@ -628,7 +628,7 @@ In all sub-flows:
       "pre": "<description from frontend-design>",
       "media": "<description from frontend-design>",
       "pagination": "<description from frontend-design>",
-      "breadcrumb": "<description from frontend-design>"
+      "breadcrumb": "<optional; include only when breadcrumb navigation is part of the chosen design>"
     },
     "motion": {
       "entrance": "<description from frontend-design>",
@@ -814,7 +814,7 @@ const data = {
     type: "list|detail|page|index",
     title: "...",
     url: "/blog/",
-    breadcrumb: [{title: "Home", url: "/"}, {title: "Blog", url: "/blog/"}],
+    breadcrumb: undefined,              // optional: [{title: "Home", url: "/"}, {title: "Blog", url: "/blog/"}]
   },
   pagination: {                         // list pages only
     current: 1,

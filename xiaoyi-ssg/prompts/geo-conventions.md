@@ -223,7 +223,7 @@ Per-item payload:
 }
 ```
 
-For doc pages, additionally include `isPartOf` / `hasPart` breadcrumb (when parent chain is known from tree structure).
+For doc pages, additionally include `isPartOf` / `hasPart` only when parent chain is known from tree structure.
 
 For landing homepage, omit `item.*` references and emit:
 

@@ -126,7 +126,7 @@ This prompt guides the AI in analyzing a reference site (URL / HTML / screenshot
 - Blockquote: left border / indent / font style / citation style.
 - Code: inline / block, background, radius, line numbers, copy button.
 - Pagination: layout, page-number style, active state, ellipsis.
-- Breadcrumb: separator, depth, clickable range.
+- Breadcrumb, if present: separator, depth, clickable range.
 
 ### 6. Motion
 

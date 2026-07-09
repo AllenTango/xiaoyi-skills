@@ -257,8 +257,7 @@
             "code",
             "pre",
             "media",
-            "pagination",
-            "breadcrumb"
+            "pagination"
           ],
           "properties": {
             "card": {
@@ -292,7 +291,8 @@
               "type": "string"
             },
             "breadcrumb": {
-              "type": "string"
+              "type": "string",
+              "description": "Optional breadcrumb styling, only needed when the generated site intentionally uses breadcrumb navigation"
             }
           }
         },

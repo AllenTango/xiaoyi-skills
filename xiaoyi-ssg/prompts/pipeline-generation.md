@@ -174,18 +174,19 @@ After emitting `base.html`, the AI MUST verify by reading back the file and conf
 The CSS file MUST define `:root { --color-* ... --font-* ... }` from the design tokens. The pipeline MUST regenerate the `:root` block whenever tokens change; do not cache stale token values.
 
 **page templates** — each page template declared in manifest
-- List pages (`forEach: "collections"` + `forEach: "pagination"`): page title, breadcrumb, card grid, pagination control, search/filter controls (if declared in manifest)
-- Detail / doc pages (`forEach: "items"`): breadcrumb, title, date, tags, cover, body, prev/next (optional), tree sidebar (if `tree: true`)
+- List pages (`forEach: "collections"` + `forEach: "pagination"`): page title, card grid, pagination control, search/filter controls (if declared in manifest), and optional local navigation when useful.
+- Detail / doc pages (`forEach: "items"`): title, date, tags, cover, body, prev/next (optional), tree sidebar (if `tree: true`), and optional breadcrumb navigation only when it improves orientation.
 - Home / singleton pages (no `forEach` or `singleton: true`): aggregated display or single-page content
 - 404 page: fixed output `/404.html`
 
-**Breadcrumb / URL safety**
-- URL path data and visual separators must be separate.
-- Breadcrumb item `url` values must be normalized internal paths such as `/`, `/blog/`, `/blog/post-title/`; never store `//`.
-- Generate the visual breadcrumb separator in exactly one place. Prefer CSS `.breadcrumb li + li::before { content: "/"; }`.
-- Do not render literal `/`, `//`, or separator text inside breadcrumb item data or template loops when CSS already provides separators.
-- Do not emit separators before the first item or after the last item.
-- Filter out empty breadcrumb items before rendering.
+**Navigation / URL safety**
+- Breadcrumb navigation is optional. Do not add it by default just because a page is a list or detail page.
+- Normalize all internal navigation URLs, including header nav, sidebars, pagination, prev/next links, filters, and optional breadcrumbs.
+- If breadcrumbs are generated, URL path data and visual separators must be separate.
+- If breadcrumbs are generated, breadcrumb item `url` values must be normalized internal paths such as `/`, `/blog/`, `/blog/post-title/`; never store `//`.
+- If breadcrumbs are generated, place the visual breadcrumb separator in exactly one layer. CSS `.breadcrumb li + li::before { content: "/"; }` is acceptable, but not required.
+- If breadcrumbs are generated, do not render literal `/`, `//`, or separator text inside breadcrumb item data or template loops when CSS already provides separators.
+- If breadcrumbs are generated, filter out empty items and never emit separators before the first item or after the last item.
 
 ### 6. CSS Variable Mapping (from Normalized Tokens)
 
