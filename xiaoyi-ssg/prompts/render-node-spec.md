@@ -382,7 +382,7 @@ mirrorMarkdown(tasks, contentFileMap, config);
 - `generateLlmsTxt`: iterate `datasets` in nav order; skip empty; group by source label; list `- [title](url): summary`.
 - `generateRobotsTxt`: always on, fixed 15-bot list (`geo-conventions.md`), policy from `config.geo.ai_bots`.
 - `mirrorMarkdown`: only for tasks whose `output` maps to a markdown source file in `contentFileMap`; skip API/derived/list/singleton pages.
-- JSON-LD (`buildJsonLd`) injected via `data.jsonLd`; `SCHEMA_MAP` keyed by `item.content_type` or source name, default `Article` (or `WebSite` for a landing/home singleton).
+- JSON-LD (`buildJsonLd`) injected via `data.jsonLd`; `SCHEMA_MAP` keyed by `item.content_type` or source name, default `Article` (or `WebSite` for a landing/home singleton). **The full `SCHEMA_MAP` table (collection name → `@type`, payload schema, opt-out conditions) is defined in [`geo-conventions.md` § `buildJsonLd`](./geo-conventions.md) — do not duplicate or diverge it.**
 
 The GEO function bodies are unchanged from prior spec except they iterate `datasets` (source-generic) rather than a `collections` object. Do not invent a `_geo/` directory.
 

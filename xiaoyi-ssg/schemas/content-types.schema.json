@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Content Types Schema",
+  "description": "Markdown front-matter schema for content sources. render.js does NOT read this for rendering — it reads template-manifest.json sources. This file is used by the AI for authoring guidance and (optionally) by the markdown adapter to validate front-matter. See prompts/content-type-definition.md.",
+  "type": "object",
+  "required": ["version", "types"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version"
+    },
+    "types": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["label", "dir", "fields"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Human-readable name shown in nav and llms.txt section headers"
+          },
+          "dir": {
+            "type": "string",
+            "pattern": "^source/_[a-z0-9][a-z0-9-]*$",
+            "description": "Content directory relative to site root. Conventionally `source/_<type>`. Must match the corresponding markdown source's `dir` in template-manifest.json."
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/definitions/field" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "nav_order": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordering of content types in the primary nav and llms.txt sections. Type names listed here must exist in `types`."
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "field": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "datetime", "date", "boolean", "string[]", "url", "number", "object"],
+          "description": "Field type. See prompts/content-type-definition.md §Field Type Validation Rules."
+        },
+        "required": { "type": "boolean", "description": "Whether this field must appear in the front-matter" },
+        "default": { "description": "Default value when the field is absent in the front-matter" },
+        "description": { "type": "string", "description": "Free-text hint for authors" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

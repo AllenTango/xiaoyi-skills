@@ -25,9 +25,10 @@
         },
         "build": {
           "type": "object",
+          "description": "Build-time overrides. Default output_dir is `public/`. When a user is migrating from an existing static site generator (Hugo / Jekyll / Astro / Next-static-export / etc.) whose `public/` / `_site/` / `dist/` / `out/` directory already exists, the AI must use `.xiaoyi-ssg-build/` instead to avoid collision. The renderer does not overwrite an existing non-empty output directory.",
           "properties": {
-            "per_page": { "type": "number" },
-            "output_dir": { "type": "string" }
+            "per_page": { "type": "number", "default": 10 },
+            "output_dir": { "type": "string", "default": "public" }
           }
         }
       }

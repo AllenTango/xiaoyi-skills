@@ -286,10 +286,12 @@ Add a JSON-LD slot inside `<head>`:
 Add a markdown mirror `<link>` for content pages (rendered when `data.mirror_md_url` is present):
 
 ```html
-<% if (it.mirror_md_url) { %>
+<% if (mirror_md_url) { %>
   <link rel="alternate" type="text/markdown" href="<%= mirror_md_url %>">
 <% } %>
 ```
+
+> Eta with `useWith: true` binds every data key at the top scope, so the condition reads `mirror_md_url`, not `it.mirror_md_url`. See [`templates/conventions.md`](../templates/conventions.md) §2.
 
 ### Detail / Doc Page Templates
 

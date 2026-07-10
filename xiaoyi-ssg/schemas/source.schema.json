@@ -83,7 +83,11 @@
           "description": "String prepended to the secret value, e.g. 'Bearer '."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["header"] },
+        { "required": ["query"] }
+      ]
     },
     "select": {
       "type": "string",
@@ -160,6 +164,14 @@
     { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
     { "if": { "properties": { "type": { "const": "rss" } } }, "then": { "required": ["url"] } },
     { "if": { "properties": { "type": { "const": "inline" } } }, "then": { "required": ["items"] } },
-    { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } }
+    { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } },
+    {
+      "if": { "properties": { "type": { "const": "json" } } },
+      "then": { "anyOf": [{ "required": ["url"] }, { "required": ["file"] }] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "csv" } } },
+      "then": { "anyOf": [{ "required": ["url"] }, { "required": ["file"] }] }
+    }
   ]
 }

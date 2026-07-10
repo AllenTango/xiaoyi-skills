@@ -132,6 +132,16 @@ The v1 engine is described in detail in `SKILL.md` § v1 Source + View Model and
 2. Failure: show the user the install command and pause; wait for explicit confirmation.
 3. Success: continue with the AI orchestration logic below.
 
+**Hard override (`--allow-self-extracted`)**
+
+The pre-flight is mandatory by default. The sole escape hatch is the explicit user flag `--allow-self-extracted`, which authorizes the AI to derive design tokens without a loaded design source. When this flag is set:
+
+- `source_skill` in `.xiaoyi-ssg-design-tokens.json` MUST be set to `"self-extracted"`.
+- `pipeline-manifest.json` MUST record the override as `allowed_self_extracted: true` together with the ISO8601 timestamp at which the user passed the flag.
+- The AI MUST still explain to the user (before any token derivation) what the override means — namely, that the design will not trace back to a curated design source and that the user is taking on responsibility for the resulting visual coherence.
+
+No other values (e.g., `popular-web-designs/*`, `claude-design`) are accepted for `source_skill` regardless of the override flag.
+
 See [`SKILL.md` § Required Dependencies](./SKILL.md).
 
 ---
@@ -772,9 +782,13 @@ In all sub-flows:
     "detail.html"
   ],
   "renderer_version": "3.0",
-  "runtime": "node"
+  "runtime": "node",
+  "allowed_self_extracted": false,
+  "allowed_self_extracted_at": null
 }
 ```
+
+> The `allowed_self_extracted` / `allowed_self_extracted_at` pair is the audit trail for the `--allow-self-extracted` hard override (see § Required Dependencies above). Default `false` / `null`. When the user explicitly passes `--allow-self-extracted`, both fields are set: `allowed_self_extracted: true` and `allowed_self_extracted_at` to the ISO8601 timestamp at which the override was issued. `source_skill` is then `"self-extracted"`.
 
 ---
 

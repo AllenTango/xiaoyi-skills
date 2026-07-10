@@ -367,9 +367,15 @@ Full spec: see [`prompts/geo-conventions.md`](./geo-conventions.md). Source disc
   "templates": ["base.html", "landing.html", "list.html", "detail.html", "doc-page.html", ...],
   "interactions_hash": "sha256:...",
   "renderer_version": "3.0",
-  "runtime": "node"
+  "runtime": "node",
+  "allowed_self_extracted": false,
+  "allowed_self_extracted_at": null
 }
 ```
+
+> `renderer_version` is the internal version of the auto-generated render engine (the `loadSources + expandViews` algorithm). It is **independent** of `SKILL.md` `version`, which tracks the skill package itself (currently `1.0.0`). The two are bumped separately and should not be conflated.
+>
+> `allowed_self_extracted` / `allowed_self_extracted_at` are the audit trail for the `--allow-self-extracted` hard override. See [`SKILL.md` § Required Dependencies](../SKILL.md) § Hard Override.
 
 ## Output Requirements
 

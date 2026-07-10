@@ -38,7 +38,11 @@
               "query":  { "type": "string" },
               "prefix": { "type": "string", "default": "" }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "oneOf": [
+              { "required": ["header"] },
+              { "required": ["query"] }
+            ]
           },
           "select":    { "type": "string", "description": "JSONPath-lite expression selecting the item array from the response" },
           "items":     { "type": "array", "description": "type=inline: literal item array", "items": { "type": "object" } },
@@ -74,7 +78,15 @@
           { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
           { "if": { "properties": { "type": { "const": "rss" } } }, "then": { "required": ["url"] } },
           { "if": { "properties": { "type": { "const": "inline" } } }, "then": { "required": ["items"] } },
-          { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } }
+          { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } },
+          {
+            "if": { "properties": { "type": { "const": "json" } } },
+            "then": { "anyOf": [{ "required": ["url"] }, { "required": ["file"] }] }
+          },
+          {
+            "if": { "properties": { "type": { "const": "csv" } } },
+            "then": { "anyOf": [{ "required": ["url"] }, { "required": ["file"] }] }
+          }
         ]
       }
     },

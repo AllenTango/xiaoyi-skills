@@ -198,7 +198,7 @@ After generating a pipeline, run the following smoke tests before declaring succ
 1. `node .xiaoyi-ssg/render.js --fresh` exits with `build done` and a non-zero `rendered=` count.
 2. `grep -l '<html' public/index.html` matches.
 3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` is 1 (raw body not escaped).
-4. `grep -c 'recentPosts\|recentProjects' .xiaoyi-ssg/templates/index.html` is at least 1 (index uses recent items).
+4. `grep -c 'recentItems\|allItemsUrl' .xiaoyi-ssg/templates/index.html` is at least 1 (index uses generic recent-items globals; per-source names like `recentPosts` / `recentProjects` are anti-patterns — see §8).
 5. The content collection count in `public/<col>/` matches the number of source files in `source/_<col>/`.
 
 If any check fails, do not claim the pipeline works.
