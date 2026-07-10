@@ -41,13 +41,13 @@ When Eta is configured with `useWith: true` (the pipeline's default), every vari
 <!-- correct -->
 <title><%= pageTitle || site.title %></title>
 <p><%= site.description %></p>
-<% for (const post of (recentPosts || [])) { %>
-  <a href="<%= post.url %>"><%= post.title %></a>
+<% for (const item of (recentItems || [])) { %>
+  <a href="<%= item.url %>"><%= item.title %></a>
 <% } %>
 
 <!-- WRONG (silent empty) -->
 <title><%= it.pageTitle || it.site.title %></title>
-<% for (const post of (it.recentPosts || [])) { %>
+<% for (const item of (it.recentItems || [])) { %>
 ```
 
 If you really want an `it` alias (e.g. for nested templates), set it explicitly at the top of the template:
@@ -66,22 +66,24 @@ The render pipeline builds the data object for each page template as follows:
 
 ```js
 data = {
-  ...globals,        // site, nav, recentPosts/recentProjects, allPostsUrl, body, ...
-  ...task.data,      // collection, col, item (for detail), page (for page type), pagination, ...
+  ...globals,        // site, nav, recentItems, allItemsUrl, body, ...
+  ...task.data,      // item (for detail), items (for list), pagination, source, page, ...
   pageTitle,         // derived from item.title + site.title
   pageDescription,   // derived from item.excerpt or site.description
 }
 ```
+
+`recentItems` and `allItemsUrl` are the **only** recent-list globals the engine produces (computed generically over the first non-empty source by `recentGlobals(datasets, manifest)` in `render.js`). Do not invent per-source globals like `recentPosts` / `recentProjects` / `latestProducts` — they will not be bound.
 
 ### 3.1 Inside `for` loops — access fields directly on the loop variable
 
 Eta iterates a JS array and binds each element to the loop variable. Inside the loop body, use that variable:
 
 ```html
-<% for (const post of recentPosts) { %>
-  <h2><%= post.title %></h2>
-  <time><%= post.dateDisplay %></time>
-  <% for (const tag of post.tags) { %>
+<% for (const item of recentItems) { %>
+  <h2><%= item.title %></h2>
+  <time><%= item.dateDisplay %></time>
+  <% for (const tag of (item.tags || [])) { %>
     <span class="tag">#<%= tag %></span>
   <% } %>
 <% } %>
@@ -101,37 +103,38 @@ demo_url: "https://..."
 ```
 
 ```html
-<% for (const project of recentProjects) { %>
-  <h3><%= project.title %></h3>
-  <span class="year"><%= project.year %></span>
-  <p><%= project.description %></p>
-  <% for (const t of project.tech_stack) { %>
+<% for (const item of recentItems) { %>
+  <h3><%= item.title %></h3>
+  <span class="year"><%= item.year %></span>
+  <p><%= item.description %></p>
+  <% for (const t of (item.tech_stack || [])) { %>
     <span class="chip"><%= t %></span>
   <% } %>
-<% if (project.demo_url) { %>
-  <a href="<%= project.demo_url %>">Demo</a>
+<% if (item.demo_url) { %>
+  <a href="<%= item.demo_url %>">Demo</a>
 <% } %>
 <% } %>
 ```
 
-The raw `customFields` object is also exposed for advanced cases (e.g. dynamic field lookups), but prefer direct access.
+There is **no** `item.customFields` sidecar in v1. Front-matter keys are flattened onto the item once at adapter time (`normalizeItem`) and that is the only form templates see. If a template needs to iterate all dynamic fields, the source must declare them as named front-matter keys (per `content-types.json`) — there is no generic "custom field bucket" to fall back to.
 
 ---
 
-## 4. Collection name binding
+## 4. Source-name binding
 
-For list templates, the render pipeline passes both `collection` (string) and `col` (object containing items and pagination). Either is usable:
+The v1 source + view model does **not** pass legacy `collection` / `col` / `collectionName` to templates. Instead, each task's `data` exposes:
 
-```html
-<% const items = (col && col.items) || []; %>
-<% const name = collection; %>
-```
+| Variable | Shape | Bound when | Notes |
+|----------|-------|------------|-------|
+| `source` | string | every `for.each` / `for.paginate` view | The name of the source the view is iterating (e.g. `"posts"`, `"products"`). Templates use this to look up friendly labels, conditionally render section headers, or build nav-active state. |
+| `item` | single Item | every `for.each` task | The current item (slug, title, date, body_html, …, plus flattened custom fields). |
+| `items` | Item[] | every `for.paginate` task | The current pagination slice. |
+| `pagination` | object | every `for.paginate` task | `{ current, total, base_url, pages, prev_url, next_url }`. |
+| `page` | number | every `for.paginate` task | 1-based current page number. |
 
-For page titles, labels, and optional navigation helpers to read the friendly collection name, the data also exposes `collectionName` (mirrored from `collection`). Use it in copy:
+Do not invent per-source names in `render.js` globals (no `recentPosts` / `latestProducts` / `currentCollection`). Read `source` and the matching dataset (passed via `use: [...]` on the view) instead.
 
-```html
-<h1><%= collectionName === 'post' ? 'Posts' : collectionName %></h1>
-```
+For a single-page view (`for` omitted, e.g. home / 404), `source` and `item`/`items` are not bound unless the view declares `use: [...]` to inject datasets as top-level variables.
 
 ---
 
@@ -199,7 +202,7 @@ After generating a pipeline, run the following smoke tests before declaring succ
 2. `grep -l '<html' public/index.html` matches.
 3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` is 1 (raw body not escaped).
 4. `grep -c 'recentItems\|allItemsUrl' .xiaoyi-ssg/templates/index.html` is at least 1 (index uses generic recent-items globals; per-source names like `recentPosts` / `recentProjects` are anti-patterns — see §8).
-5. The content collection count in `public/<col>/` matches the number of source files in `source/_<col>/`.
+5. The number of detail pages in `public/<source-url-prefix>/` matches the item count of the corresponding source (e.g. for a markdown source `posts` with `output: "/blog/{slug}/"`, every item produces exactly one `public/blog/<slug>/index.html`).
 
 If any check fails, do not claim the pipeline works.
 
