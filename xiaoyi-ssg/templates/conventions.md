@@ -66,12 +66,15 @@ The render pipeline builds the data object for each page template as follows:
 
 ```js
 data = {
-  ...globals,        // site, nav, recentItems, allItemsUrl, body, ...
-  ...task.data,      // item (for detail), items (for list), pagination, source, page, ...
+  ...globals,        // site, nav, recentItems, allItemsUrl, tokens, build_time
+  ...task.data,      // source, lang, item (for.each), items (for.paginate),
+                     // pagination, page, plus view.data and any dataset injected via `use: [...]`
   pageTitle,         // derived from item.title + site.title
   pageDescription,   // derived from item.excerpt or site.description
 }
 ```
+
+> The `body` variable is **layout-only** — it is the rendered page-template output that the layout splices via `<%~ body %>`. It is never present in a page template's data; do not reference `body` from `*.html` files other than `base.html`.
 
 `recentItems` and `allItemsUrl` are the **only** recent-list globals the engine produces (computed generically over the first non-empty source by `recentGlobals(datasets, manifest)` in `render.js`). Do not invent per-source globals like `recentPosts` / `recentProjects` / `latestProducts` — they will not be bound.
 
@@ -148,7 +151,7 @@ For a single-page view (`for` omitted, e.g. home / 404), `source` and `item`/`it
 | `topics` | string[] | JSON-LD `keywords`, `<meta name="keywords">` | Omitted |
 | `audience` | string | JSON-LD `audience` | Omitted |
 | `citation_key` | string | Citation footer block (when template renders one) | Omitted |
-| `content_type` | string | JSON-LD `@type` override | Auto-mapped from collection name (`post` → `BlogPosting`, `doc` → `TechArticle`, etc.) |
+| `content_type` | string | JSON-LD `@type` override | Auto-mapped from source name (`posts` → `BlogPosting`, `docs` → `TechArticle`, etc.) |
 | `updated` | date | Sitemap `<lastmod>`, JSON-LD `dateModified` | Falls back to `date` |
 | `noai` | boolean | `<meta name="robots" content="noai">` on this page only | Site-wide `config.geo.noai` |
 
@@ -181,14 +184,16 @@ A complete pipeline must define these in `template-manifest.json` (current v1):
 
 ## 6. Style integration with frontend-design
 
-When generating `assets/style.css`, leverage design tokens from `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json`. Common token groupings:
+When generating `assets/style.css`, leverage design tokens from `<SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` (see [`schemas/design-tokens.json`](../schemas/design-tokens.json) for the canonical field names). Map each xiaoyi token field to a CSS custom property at generation time; do not invent CSS variable names that diverge from the token field names:
 
-| Token group | Example fields | CSS variables to emit |
-| ----------- | -------------- | --------------------- |
-| `color`     | `bg`, `fg`, `accent`, `border` | `--color-bg`, `--color-fg`, `--color-accent`, `--color-border` |
-| `typography` | `font-sans`, `font-mono`, `base-size`, `line-height` | `--font-sans`, `--font-mono`, `--text-base`, `--leading-normal` |
-| `layout`    | `container`, `radius` | `--container-max`, `--radius-base` |
-| `motion`    | `duration-fast`, `duration-base` | `--motion-fast`, `--motion-base` |
+| Token group | Token field (from `design-tokens.json`) | CSS variable |
+| ----------- | --------------------------------------- | ------------ |
+| `color`     | `background`, `text`, `accent`, `accentHover`, `muted`, `border`, `borderDark`, `focus`, `error`, `success`, `backgroundDark`, `textDark` | `--color-{field}` (e.g. `--color-background`, `--color-text`, `--color-accent-hover`) |
+| `typography` | `fontDisplay`, `fontBody`, `fontMono`, `lineLength`, `letterSpacing.display/body/caps`, `scale.h1/h2/h3/body/small/micro` | `--font-{field}`, `--letter-spacing-{field}`, `--line-length` |
+| `layout`    | `containerMax`, `headerHeight`, `footerHeight`, `sidebarWidth`, `gridColumns`, `gutter`, `rhythm`, `radius` | `--container-max`, `--header-height`, `--gutter`, `--radius`, etc. |
+| `motion`    | `entrance`, `hover`, `focus`, `transitionFast`, `transitionBase` | `--transition-fast`, `--transition-base`, `--motion-{name}` |
+
+> The CSS-variable naming shown here is the **convention xiaoyi-ssg follows**. The pipeline emits `:root { ... }` from these token fields at generation time, so renames need to happen in lockstep across `design-tokens.json`, the generated `style.css`, and every template that references the variable.
 
 For richer component styling (cards, hero, nav, post lists), consult the **frontend-design** skill which provides curated component patterns and accessibility tokens. Reference it from `prompts/pipeline-generation.md` so the AI generating the CSS knows to load it as auxiliary context.
 
@@ -201,7 +206,7 @@ After generating a pipeline, run the following smoke tests before declaring succ
 1. `node .xiaoyi-ssg/render.js --fresh` exits with `build done` and a non-zero `rendered=` count.
 2. `grep -l '<html' public/index.html` matches.
 3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` is 1 (raw body not escaped).
-4. `grep -c 'recentItems\|allItemsUrl' .xiaoyi-ssg/templates/index.html` is at least 1 (index uses generic recent-items globals; per-source names like `recentPosts` / `recentProjects` are anti-patterns — see §8).
+4. `grep -c 'recentItems\|allItemsUrl' .xiaoyi-ssg/templates/home.html` is at least 1 (the home template uses the generic recent-items globals; per-source names like `recentPosts` / `recentProjects` are anti-patterns — see §8).
 5. The number of detail pages in `public/<source-url-prefix>/` matches the item count of the corresponding source (e.g. for a markdown source `posts` with `output: "/blog/{slug}/"`, every item produces exactly one `public/blog/<slug>/index.html`).
 
 If any check fails, do not claim the pipeline works.
@@ -230,6 +235,6 @@ For GEO-specific smoke tests (always add these):
 
 ## 9. When in doubt
 
-- Look at `references/lark_cli_dashboard.md` in the `feishu-doc-sync` skill — it follows similar principles (deterministic API → render).
-- Look at any well-formed xiaoyi-ssg site under `~/temp/ssg-demo*` for working examples after `node .xiaoyi-ssg/render.js --fresh`.
+- Re-read [`prompts/render-node-spec.md`](../prompts/render-node-spec.md) §Overall Flow + §`loadSources` / §`expandViews` to confirm what the engine actually injects into each view's data.
+- Cross-check the §3 data-shape table above against `prompts/render-node-spec.md` §`renderWithLayout` — the contract there is authoritative.
 - When the AI generates a pipeline that renders empty pages, **the data-binding section (§3) is the first place to check** — 80% of the time it's an `it.` prefix or `<%-` instead of `<%~`.
