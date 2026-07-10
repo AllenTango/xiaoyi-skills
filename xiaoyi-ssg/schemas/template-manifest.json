@@ -44,7 +44,7 @@
               { "required": ["query"] }
             ]
           },
-          "select":    { "type": "string", "pattern": "^\\$(\\.([a-zA-Z_][\\w]*)|\\[\\d+\\])*$", "description": "JSONPath-lite expression selecting the item array from the response. See schemas/source.schema.json for syntax." },
+          "select":    { "type": "string", "description": "JSONPath-lite expression selecting the item array from the response. See schemas/source.schema.json for syntax." },
           "items":     { "type": "array", "description": "type=inline: literal item array", "items": { "type": "object" } },
           "from":      { "type": "string", "description": "type=derived: name of the source this one is computed from" },
           "op":        { "type": "string", "enum": ["groupBy", "filter", "map", "flatten", "unique", "count"], "description": "type=derived: transform applied to the `from` source" },
@@ -117,12 +117,7 @@
           },
           "use":  { "type": "array", "items": { "type": "string" }, "description": "Source names whose full datasets are injected as top-level variables (multi-source aggregation)" },
           "data": { "type": "object" },
-          "lang": {
-            "type": "array",
-            "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$" },
-            "minItems": 1,
-            "description": "If set, expand once per language code (adds {lang} placeholder). Each entry must be a valid BCP 47 language tag, e.g. 'en', 'zh', 'zh-CN'."
-          }
+          "lang": { "type": "array", "items": { "type": "string" }, "description": "If set, expand once per language code (adds {lang} placeholder). Use the same tag style as `config.site.language` (BCP 47 — e.g. 'en', 'zh', 'zh-CN')." }
         },
         "allOf": [
           { "if": { "properties": { "type": { "const": "layout" } } }, "then": { "required": ["file"] } },
