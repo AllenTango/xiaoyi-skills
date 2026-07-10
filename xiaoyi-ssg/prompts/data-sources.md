@@ -24,18 +24,20 @@ Every source, regardless of kind, resolves to the same **normalized item shape**
   slug,            // URL-safe id (required; derived if absent — see Slug Rules)
   title,           // display title
   date,            // ISO date string or '' (String()-coerced; never a JS Date)
-  dateDisplay,     // formatted per config.site.language
+  date_display,    // formatted per config.site.language
   excerpt,         // short text or ''
   cover,           // image URL/path or undefined
   tags,            // string[] (default [])
   categories,      // string[] (default [])
-  bodyHtml,        // rendered HTML body (markdown/rss) or '' (data sources)
+  body_html,       // rendered HTML body (markdown/rss) or '' (data sources)
   url,             // canonical page url, filled in by the view that owns the item
   source,          // originating source name
   draft,           // boolean (default false)
   ...rest          // ALL other fields flattened to top level (so item.price, item.stars work directly)
 }
 ```
+
+> The raw markdown source is **not** carried on the item. The markdown adapter records the source file path into `contentFileMap: Map<pageUrl, sourceMdPath>`; the GEO markdown mirror and `llms-full.txt` re-read from disk via that map. Do not invent an `item.body` field — it does not exist.
 
 Custom/API fields are **flattened to the top level**. Do not bury them under `customFields`; templates must be able to write `<%= item.price %>` directly.
 
@@ -70,7 +72,7 @@ The classic path. Reads `def.dir` (`source/_posts` etc.), parses front-matter wi
 ```
 
 - `slug` = front-matter `slug` else filename without date prefix/extension.
-- `bodyHtml` = rendered markdown; raw markdown path is recorded in `contentFileMap` for the GEO markdown mirror.
+- `body_html` = rendered markdown; raw markdown path is recorded in `contentFileMap` for the GEO markdown mirror.
 - All front-matter keys are flattened to the item top level.
 
 ### `http` (build-time API fetch)
@@ -118,7 +120,7 @@ Adapter algorithm:
 { "type": "rss", "url": "https://blog.example.com/feed.xml", "map": { "excerpt": "description" } }
 ```
 
-- Parse `<item>`/`<entry>` into items: `title`, `url` (link), `date` (pubDate/updated), `excerpt`, `bodyHtml` (content:encoded when present).
+- Parse `<item>`/`<entry>` into items: `title`, `url` (link), `date` (pubDate/updated), `excerpt`, `body_html` (content:encoded when present).
 
 ### `inline` (literal items in the manifest)
 

@@ -82,7 +82,7 @@ Eta iterates a JS array and binds each element to the loop variable. Inside the 
 ```html
 <% for (const item of recentItems) { %>
   <h2><%= item.title %></h2>
-  <time><%= item.dateDisplay %></time>
+  <time><%= item.date_display %></time>
   <% for (const tag of (item.tags || [])) { %>
     <span class="tag">#<%= tag %></span>
   <% } %>

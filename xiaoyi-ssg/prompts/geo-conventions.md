@@ -44,18 +44,22 @@ These fields are optional. When absent, sensible defaults apply.
 | `updated` | `date` | Sitemap `<lastmod>`, JSON-LD `dateModified` | falls back to `date` |
 | `noai` | `boolean` | `<meta name="robots" content="noai">` per page | `config.geo.noai` (site-wide default) |
 
-When the user does not provide `summary`, `render.js` must auto-derive it:
+When the user does not provide `summary`, `render.js` must auto-derive it from the **raw markdown source** (read via `contentFileMap.get(item.url)`, never from `item.body_html` — that's already-rendered HTML, and stripping HTML tags to recover plain text is lossy):
 
 ```javascript
-function deriveSummary(item) {
+function deriveSummary(item, contentFileMap) {
   if (item.summary) return item.summary;
-  const text = (item.body || '').replace(/[#*`>_-]/g, '').trim();
+  const mdPath = contentFileMap?.get(item.url);
+  const raw = mdPath ? readFileSync(mdPath, 'utf-8') : '';
+  const text = raw.replace(/^---[\s\S]*?---\n?/, '').replace(/[#*`>_-]/g, '').trim();
   const firstPara = text.split(/\n\s*\n/)[0] || '';
   return firstPara.slice(0, 200).trim();
 }
 ```
 
-This auto-derivation is mandatory — the AI must never emit `<meta name="description">` as empty.
+For items where `item.url` is not in `contentFileMap` (API / JSON / CSV / RSS / inline / derived — i.e. non-markdown sources), this function returns `''`. The caller is responsible for emitting `<meta name="description">` with the empty string or omitting the tag entirely for non-content pages (404, landing with no markdown mirror, etc.).
+
+This auto-derivation is mandatory — the AI must never emit `<meta name="description">` as empty for a markdown-source page.
 
 ---
 
@@ -153,7 +157,7 @@ Rules:
   {raw markdown body, frontmatter stripped}
   ```
 
-- Use the **raw markdown body** (frontmatter stripped), not `body_html` — LLMs benefit more from markdown source
+- Use the **raw markdown body** (frontmatter stripped, read via `contentFileMap`), not `body_html` — LLMs benefit more from markdown source
 
 ### `generateRobotsTxt(config)` — Always On
 
@@ -323,7 +327,7 @@ No additional paths needed — GEO outputs are derived from content + config, bo
 ## Common Pitfalls
 
 1. **llms.txt with `: ` and no summary** — emits `- [Foo](https://.../foo/): `. Validate: every line must either have content after the colon or omit the colon entirely.
-2. **llms-full.txt contains rendered HTML** — pass the raw markdown body (`item.body`), not `item.body_html`. LLMs prefer markdown source.
+2. **llms-full.txt contains rendered HTML** — re-read the raw markdown from disk via `contentFileMap.get(task.output)` (the markdown adapter records `Map<pageUrl, sourceMdPath>` for every `for.each` output of a markdown source). The item carries `body_html`, never the raw body — pass the raw markdown bytes, not the rendered HTML. LLMs prefer markdown source.
 3. **JSON-LD with `datePublished: "Invalid Date"`** — guard with `if (item.date)`. If frontmatter `date` is missing or unparseable, omit the field rather than emitting garbage.
 4. **`robots.txt` with conflicting directives** — when `config.geo.noai === true`, the `User-agent: *` block must say `Disallow: /`, not `Allow: /`. The AI bot blocks below follow `config.geo.ai_bots`, not `noai`. These are independent policies.
 5. **Markdown mirror copies `body_html`** — must be the raw source markdown with frontmatter stripped. Re-reading the original `.md` file (not the parsed item) is mandatory.
