@@ -138,11 +138,12 @@ Use the four default dependencies above. If the user explicitly needs charts, ma
 - Single file, Node.js 18+, ESM.
 - Dependencies: `chokidar` (file watching), reuses `render.js`'s `build()` function.
 - Behavior:
-  - HTTP server serves `public/` (port 3000, auto-increment on conflict).
-  - chokidar watches: `source/**/*.md`, `.xiaoyi-ssg/templates/**`, `.xiaoyi-ssg/assets/**`, `.xiaoyi-ssg/sources/**`, `.xiaoyi-ssg/template-manifest.json`, `.xiaoyi-ssg/content-types.json`, `.xiaoyi-ssg/interactions.manifest.json`, `.xiaoyi-ssg-design-tokens.json`, `config.yml`, `source/_media/**`.
+  - HTTP server serves `public/` (port from `config.dev.port`, default 3000, auto-increment on conflict).
+  - chokidar watch list: see [`prompts/render-node-spec.md` § Required Watch Paths](./render-node-spec.md) — the watch list is owned by that file; do not duplicate it here. Generated `dev.js` reads the canonical list (or hard-codes the same 10 paths if you prefer not to import a constant).
   - **Remote sources are NOT re-fetched on every keystroke**: dev respects each source's snapshot + `cache.ttl`. A `build:fresh` or expired TTL triggers a re-fetch. This keeps dev fast and avoids hammering authed APIs.
   - On change → incremental build (reuses render.js logic) → SSE push for reload.
   - HTTP response interception: inject SSE client script before `</body>` (dev only).
+  - 300ms debounce + build lock so multi-file saves (e.g. editor "save all") do not stack renders.
 - Port auto-increment pattern is mandatory — see `prompts/render-node-spec.md` § Mandatory: Port Auto-Increment.
 
 ### 4. template-manifest.json — Single Source of Truth

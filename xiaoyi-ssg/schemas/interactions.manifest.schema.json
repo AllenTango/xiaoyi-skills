@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Interactions Manifest Schema",
+  "description": "Per-site browser-interaction contract. Each entry declares one interaction (search / filter / lightbox / etc.) and the assets it needs. render.js validates this at startup; dev.js watches it; script.js bootstraps the registered interactions at runtime. See prompts/pipeline-generation.md §9.",
+  "type": "object",
+  "required": ["version", "interactions"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version"
+    },
+    "interactions": {
+      "type": "array",
+      "description": "List of browser interactions. May be empty; the engine injects default mobile-menu + theme-toggle interactions when the array is empty AND the templates emit [data-interaction] elements.",
+      "items": { "$ref": "#/definitions/interaction" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "interaction": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Stable kebab-case identifier. Used as the key in `data-interaction=\"<name>\"` attributes, as the filename stem for auto-generated data files, and as a fragment of the corresponding `assets/data/<name>.json` path."
+        },
+        "pages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "View names (in `template-manifest.json`) or output URL prefixes this interaction ships on. Empty = site-wide."
+        },
+        "selectors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CSS selectors (relative to the page) that mark nodes this interaction owns. Default: `[data-interaction=\"<name>\"]`."
+        },
+        "modules": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^assets/(interactions|scripts)/.+\\.js$" },
+          "description": "JS modules to load for this interaction, relative to the site root. Files must exist under `assets/interactions/` or `assets/scripts/` and are copied verbatim to `public/assets/...`."
+        },
+        "data": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^assets/data/.+\\.json$" },
+          "description": "Static data files this interaction reads, relative to the site root. Each must be produced by `buildExtras` (see prompts/render-node-spec.md) and included in the per-page render hash."
+        },
+        "content_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Source names whose items contribute to this interaction's auto-generated data. Used by `buildExtras` (e.g. a filter's facet counts need to know which sources to aggregate over). Defaults to all sources when absent."
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "version"],
+            "properties": {
+              "name":    { "type": "string", "description": "npm package name (e.g. 'fuse.js')" },
+              "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+", "description": "Exact pinned version (no ranges). Recorded in `interactions.manifest.json` so `npm install` is reproducible." }
+            },
+            "additionalProperties": false
+          },
+          "description": "Extra npm packages this interaction needs. Pinned exact versions; recorded here for transparency and reproducibility. Default deps (js-yaml / marked / chokidar / eta) are NOT listed — they are dev-time render deps, not browser interaction deps."
+        },
+        "fallback": {
+          "type": "string",
+          "description": "What the user sees when JS is disabled or the module fails to load. The page must remain readable / linked without the interaction (e.g. 'full project list remains visible without JavaScript')."
+        },
+        "accessibility": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["keyboard", "aria-live", "aria-expanded", "aria-selected", "focus-visible", "focus-trap", "reduced-motion", "prefers-color-scheme", "prefers-reduced-motion"]
+          },
+          "description": "A11y primitives this interaction implements. Engine does not enforce; this is documentation for the AI generator and for the eventual accessibility audit."
+        },
+        "verification": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Manual verification steps (used by the AI when reporting success to the user, and by the eventual human reviewer)."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

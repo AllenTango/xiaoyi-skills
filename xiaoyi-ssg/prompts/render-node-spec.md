@@ -90,7 +90,7 @@ The AI that materializes `render.js` must implement (or import from generated he
 | `loadConfig()` | `() => Config` | Parse + validate `config.yml` against `schemas/config.schema.json`. |
 | `loadTokens()` | `() => DesignTokens` | Parse + validate `.xiaoyi-ssg-design-tokens.json` against `schemas/design-tokens.json`. |
 | `loadContentTypes()` | `() => ContentTypes` | Parse + validate `.xiaoyi-ssg/content-types.json` against `schemas/content-types.json`. Used for AI authoring guidance and optional frontmatter validation; `render.js` does **not** read it to find content. |
-| `loadInteractionsManifest()` | `() => InteractionsManifest` | Parse `.xiaoyi-ssg/interactions.manifest.json`. Optional; default empty `{ interactions: [] }` when absent. |
+| `loadInteractionsManifest()` | `() => InteractionsManifest` | Parse + validate `.xiaoyi-ssg/interactions.manifest.json` against `schemas/interactions.manifest.schema.json`. Optional; default empty `{ version: 1, interactions: [] }` when absent. |
 | `loadCache()` | `() => Cache` | Read `.xiaoyi-ssg-cache.json` if present; default `{ version: 1, outputs: {} }`. |
 | `validateConfig(config)` | `(c: Config) => void` | Enforce **semantic** checks that the JSON Schema alone cannot express. The schema already rejects missing `site.title` / `site.language` and bad `site.language` regex (`^[a-z]{2,3}(-[A-Z]{2})?$`); `validateConfig` adds: `site.url` must parse as a valid URL when present; `site.timezone` must be a valid IANA tz (e.g. `Asia/Shanghai`) when present; `geo.ai_bot_rules` keys must be a subset of the canonical 15-bot list (see `prompts/geo-conventions.md`); `geo.ai_bots: "custom"` requires a non-empty `geo.ai_bot_rules` object. Throw on any violation. |
 | `buildNav(config, manifest, datasets)` | `(c, m, ds) => NavItem[]` | Read `config.nav` (declared in `config.yml` per `schemas/config.schema.json`) and shape it into `NavItem[]` (each: `{ title, url, active?, children? }`). If `config.nav` is absent, build a minimal default by walking manifest page views whose `output` is a top-level path (`/about/`, `/blog/`, …), using each view's `name` as the title and `output` as the url. Do not invent `nav: true` flags on views — that field does not exist in the schema. |
@@ -121,7 +121,7 @@ The AI that materializes `render.js` must implement (or import from generated he
 | `generateSitemap(tasks, config)` | `(tasks, c) => void` | Aggregate `public/<output>/index.html` paths; respect per-page `updated`. |
 | `generateLegacy404(eta, manifest)` | `(eta, m) => void` | After the main render loop, write a top-level `public/404.html` for legacy static hosts (Cloudflare Pages, Netlify default, GitHub Pages) that serve `/404.html` instead of `/404/index.html`. Locate the `404` view in `manifest.views` (must be present per template-manifest-generation.md post-generation checklist), re-render it with the base layout + a minimal data object, and write the result to `public/404.html`. The `/404/index.html` form is produced by the regular render loop. |
 | `generateGeo(datasets, tasks, config, contentTypes)` | `(ds, tasks, c, ct) => void` | `llms.txt` / `llms-full.txt` / `robots.txt` / markdown mirror / JSON-LD. Full spec in `prompts/geo-conventions.md`. |
-| `assertNoSecretsInOutput(manifest.sources)` | `(sources) => void` | Grep `public/**` for every resolved `auth.env` value; throw on any match. Mandatory — runs after every build. |
+| `assertNoSecretsInOutput(manifest.sources)` | `(sources) => void` | **Mandatory self-test.** For every source with `auth`: (1) resolve `process.env[auth.env]`; if the env var is missing, skip (no secret was used to fetch — but log a warning so the user knows `auth.env` is set without a value). (2) If resolved, scan every file under `public/` (including `public/assets/data/*.json`) as text and binary (`grep -rIl` semantics on UTF-8; binary detection by first-8KB null-byte count). (3) Throw on any match, with a message naming the source, the env var, and the file (never the secret value itself). Exits non-zero. Must be the last step before `printSummary` so the build is not declared successful on a leak. |
 | `saveCache(cache)` | `(c) => void` | Write `.xiaoyi-ssg-cache.json` atomically (tmp + rename). |
 | `printSummary(tasks, datasets)` | `(tasks, ds) => void` | `build done · rendered=N cached=M …` (one line). On warning, append a second line. |
 
@@ -359,18 +359,66 @@ Before generating `assets/style.css`, load `frontend-design`, normalize to `.xia
 import { build } from './render.js';
 import chokidar from 'chokidar';
 
+const PIPELINE_DIR = dirname(fileURLToPath(import.meta.url));
+const SITE_ROOT = dirname(PIPELINE_DIR);
+
 await build(false);
-// HTTP server on config.dev.port (auto-increment on EADDRINUSE)
-// inject SSE client before </body> (dev only)
-// watch: source/**/*.md, .xiaoyi-ssg/templates/**, .xiaoyi-ssg/assets/**,
-//        .xiaoyi-ssg/sources/**, .xiaoyi-ssg/template-manifest.json,
-//        .xiaoyi-ssg/content-types.json, .xiaoyi-ssg/interactions.manifest.json,
-//        .xiaoyi-ssg-design-tokens.json, config.yml, source/_media/**
-// on change → debounce 300ms → build(false) → SSE reload
+
+// Required watch paths — see §Required Watch Paths below. Single source of truth.
+const WATCH_PATHS = [
+  'source/**/*.md',
+  'source/_media/**',
+  'config.yml',
+  '.xiaoyi-ssg-design-tokens.json',
+  '.xiaoyi-ssg/template-manifest.json',
+  '.xiaoyi-ssg/content-types.json',
+  '.xiaoyi-ssg/interactions.manifest.json',
+  '.xiaoyi-ssg/templates/**',
+  '.xiaoyi-ssg/assets/**',
+  '.xiaoyi-ssg/sources/**',
+];
+
+const watcher = chokidar.watch(WATCH_PATHS.map(p => join(SITE_ROOT, p)), {
+  ignoreInitial: true,
+  ignored: ['**/node_modules/**', '**/.cache/**', '**/public/**'],
+});
+let buildLock = null;
+watcher.on('all', (event, filepath) => {
+  if (buildLock) return;
+  buildLock = setTimeout(async () => {
+    buildLock = null;
+    try { await build(false); broadcastReload(); }
+    catch (e) { console.error(`[dev] build failed after change to ${filepath}:`, e.message); }
+  }, 300);
+});
 ```
 
 - Remote sources are **not** re-fetched on every keystroke: dev respects each source's snapshot + `cache.ttl`. A manual full refresh (`build:fresh`) or expired TTL triggers a re-fetch. This keeps dev fast and avoids hammering APIs.
 - Reuse `build` in-process (no `execSync`).
+
+### Required Watch Paths (single source of truth)
+
+dev.js `chokidar.watch` MUST subscribe to **exactly** this list. The same list is also used by `pipeline-generation.md` to validate the generated `dev.js` at the end of pipeline generation (the AI must not invent a different list — additions/removals happen here, in this prompt).
+
+| Path | Reason |
+|------|--------|
+| `source/**/*.md` | Markdown content changes |
+| `source/_media/**` | User-managed media (images, video) |
+| `config.yml` | Site config / language / nav / dev settings |
+| `.xiaoyi-ssg-design-tokens.json` | Design tokens → CSS variable regeneration |
+| `.xiaoyi-ssg/template-manifest.json` | Sources / views / expansion strategy change |
+| `.xiaoyi-ssg/content-types.json` | Frontmatter schema (authoring hints + optional validation) |
+| `.xiaoyi-ssg/interactions.manifest.json` | Browser-interaction contract |
+| `.xiaoyi-ssg/templates/**` | Eta template body / layout edits |
+| `.xiaoyi-ssg/assets/**` | `style.css` / `script.js` / interaction modules / static data |
+| `.xiaoyi-ssg/sources/**` | Source Adapter source code edits |
+
+**Explicitly NOT watched** (regenerated, git-ignored, or runtime-only):
+
+- `public/**` — build output, never a source
+- `.xiaoyi-ssg/node_modules/**` — npm artifacts
+- `.xiaoyi-ssg/.cache/**` — remote source snapshots, regenerated by `build`
+- `.xiaoyi-ssg-cache.json` — per-output hash cache, regenerated by `build`
 
 ### Mandatory: Port Auto-Increment
 
@@ -405,20 +453,21 @@ Emit this exact pattern (or a functional equivalent). A hardcoded `server.listen
 
 Generate `public/assets/data/*.json` for browser interactions. Iterate `interactions.interactions`; the data is drawn from `datasets` (any source, not just markdown). **Never include secret-derived fields** — only public, display-safe fields.
 
+The match against built-in generators is **exact-name**, not substring: only an interaction named exactly `search` triggers the search-index aggregator, only an interaction named exactly `filter` triggers the facet aggregator. Earlier drafts used `name.includes('search')` / `name.includes('filter')` which double-generated for names like `filter-search` (matched both branches) and missed the difference between `search` and `search-suggestions`. Other interactions with `data: [...]` files must have those files produced by a custom generator (see `interactions.manifest.schema.json` `generator` field) or by a one-off data file written into `assets/data/` and listed in `interactions.manifest.json`.
+
 ```javascript
 function buildExtras(config, datasets, interactions) {
   const data = {};
   const allItems = Object.values(datasets).flatMap(d => d);   // every source contributes
   for (const it of (interactions.interactions || [])) {
-    if (it.name.includes('search')) {
+    if (it.name === 'search') {
       data['search-index.json'] = allItems.map(i => ({
         title: i.title, url: i.url, type: i.source, excerpt: i.excerpt || '',
         tags: i.tags || [], text: [i.title, i.excerpt].filter(Boolean).join(' ')
       }));
-    }
-    if (it.name.includes('filter')) {
+    } else if (it.name === 'filter') {
       const names = it.content_types || Object.keys(datasets);
-      data[`${it.name}.json`] = {
+      data[`${it.name}.json`] = {                                  // typically filter.json
         items: names.flatMap(n => (datasets[n] || []).map(i => ({
           title: i.title, url: i.url, type: n, tags: i.tags || [], categories: i.categories || [], date: i.date || ''
         })))
