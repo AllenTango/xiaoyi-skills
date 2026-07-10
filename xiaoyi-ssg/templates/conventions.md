@@ -163,16 +163,16 @@ Templates read these via the standard `item.*` access (frontmatter is flattened 
 
 ## 5. Required template files
 
-A complete pipeline must define these in `template-manifest.json`:
+A complete pipeline must define these in `template-manifest.json` (v2):
 
 | Template name | Purpose                                  | Output path             | Notes                                |
 | ------------- | ---------------------------------------- | ----------------------- | ------------------------------------ |
 | `base`        | Layout wrapper (HTML shell + nav/footer) | (layout only)           | Contains `<%~ body %>`               |
-| `index`       | Homepage                                 | `/`                     | Uses `recentPosts`/`recentProjects`  |
-| `<col>-list`  | One per collection                       | `/<col>/`               | Iterates `col.items`                 |
-| `<col>-detail`| One per collection                       | `/<col>/{slug}/`        | Iterates single item, sets `forEach: items` |
-| `page-detail` | Singleton pages                          | `/{slug}/`              | Iterates `page` collection items     |
-| `404`         | Not found                                 | `/404.html`             | `data.kind === '404'`                |
+| `home`        | Homepage                                 | `/`                     | Uses `recentItems`/`allItemsUrl` (generic over the primary source) or `use: [...]` to iterate multiple datasets |
+| `<source>-list` | One per source                         | `/<source>/` or `/<source>/page/{n}/` | A `for.paginate` view over a source; iterates `items` |
+| `<source>-detail` | One per source                       | `/<source>/{slug}/`     | A `for.each` view; iterates single item bound as `item` |
+| `tag` / aggregation | Taxonomy pages                    | `/tag/{field}/`         | A `for.each` view over a `derived` source (e.g. `groupBy`) |
+| `404`         | Not found                                 | `/404/`                 | Engine appends `index.html` at write time |
 
 ---
 
@@ -218,9 +218,10 @@ For GEO-specific smoke tests (always add these):
 - ❌ `<%- body %>` in `base.html` — outputs empty
 - ❌ `it.xxx` in any template — `it` is not bound by default
 - ❌ `recentPosts` in render.js globals but `recentProjects` referenced in template — naming mismatch
-- ❌ Hardcoding `collections.post` in `render.js` — breaks any non-post collection
-- ❌ Hardcoding `contentTypes.types[name]` — manifest uses `collections` key, types and collections are different concepts
-- ❌ Setting `<% const it = data %>` then using `it.customFields.xxx` in a loop — verbose and brittle; flatten custom fields at scan time instead (see §3.2)
+- ❌ Hardcoding a source name in `render.js` (e.g. `datasets.posts`, `collections.post`) — breaks any other source name. Iterate `Object.keys(datasets)` / `Object.values(datasets).flatMap(...)` instead.
+- ❌ Hardcoding `contentTypes.types[name]` in `render.js` for rendering — render.js reads `template-manifest.json` sources, not content-types.json. The latter is for AI authoring guidance and optional markdown front-matter validation.
+- ❌ Setting `<% const it = data %>` then using `it.customFields.xxx` in a loop — verbose and brittle; flatten custom fields at adapter normalization time instead (see §3.2)
+- ❌ Inventing v1-shaped `collections` or `forEach: items/collections/pagination` in the engine — the v2 model is `sources + views` only. There is no shim.
 
 ---
 

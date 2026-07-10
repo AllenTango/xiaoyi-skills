@@ -1,248 +1,285 @@
-# Template Manifest Generation Prompt
+# Site Manifest Generation (v2)
 
-This prompt guides the AI in generating `.xiaoyi-ssg/template-manifest.json` based on the user's site intent and content model.
+This prompt guides the AI in producing `.xiaoyi-ssg/template-manifest.json` from the user's intent. The manifest conforms to `schemas/template-manifest.json` (v2) and is the **only** structural declaration the engine reads.
 
-> **Core principle**: the engine (`render.js`) knows nothing about specific site types. The AI assembles the manifest on the spot; the engine just interprets the JSON.
-> No "landing mode / blog mode / docs mode" baked into the engine — only "AI decides how to combine manifest fields".
+> **Core principle**: the engine does not know site types. There is no "blog mode / docs mode / landing mode" baked in. The AI assembles a manifest from two open abstractions:
+> - **`sources`** — where the data lives (markdown / http / json / csv / rss / inline / derived). See [`data-sources.md`](./data-sources.md).
+> - **`views`** — what pages to emit and how. Source-type agnostic.
+>
+> Any site shape — including the long tail (API-backed apps, aggregation pages, dashboards, taxonomy) — is a valid combination of sources + views. If a need is not covered by a built-in adapter, the user (or AI) writes a new adapter under `.xiaoyi-ssg/sources/` and registers its `type` in the schema; the engine does not change.
 
 ---
 
-## Manifest Structure (Mandatory)
+## Manifest Skeleton (Mandatory)
 
 See `schemas/template-manifest.json`:
 
 ```typescript
 {
-  version: 1,
-  collections: {
-    [collectionName: string]: {
-      source: string,                   // content source directory, e.g., "source/_posts"
-      sort?: { field: string, order: 'asc'|'desc' },
-      pagination?: { perPage: number, path: string },  // path contains {n} placeholder
-      singleton?: boolean,              // only use first item to render single page
-      tree?: boolean,                   // build tree structure (for docs site sidebar)
-    }
+  version: 2,                                  // const 2 — no v1 compatibility
+  sources: {
+    [name: string]: SourceDef                  // see schemas/source.schema.json
   },
-  templates: [
+  views: [
     {
       name: string,
-      type: 'layout' | 'page',
-      layout?: string,                  // required when type=page; references layout template name
-      file: string,                     // file name under templates/
-      output?: string,                  // required when type=page; contains placeholders
-      data?: object,                    // static data bindings
-      forEach?: 'collections' | 'items' | 'pagination',
-      lang?: string[],                  // multi-language expansion
+      type: "layout" | "page",
+      file: string,                            // templates/<file>.html
+      layout?: string,                         // required when type=page
+      output?: string,                         // required when type=page; placeholders: {slug},{n},{lang},{source},{field},{date:FMT}
+      for?: { each?: string, paginate?: string, perPage?: number, where?: object },
+      use?: string[],                          // source names whose datasets are injected as top-level vars
+      data?: object,
+      lang?: string[]
     }
   ],
-  globals?: { site?, nav?, tokens? },
+  globals?: { site?, nav?, tokens? }
 }
 ```
 
+A minimal manifest must contain: ≥1 source and ≥1 view. There must be at least one layout view (`type=layout`) referenced by every page view.
+
 ---
 
-## Key Field Decision Guide
+## Field Decision Guide
 
-### 1. `collections` — one entry per content type
+### 1. `sources` — one entry per data origin
 
-| User intent | Collection config |
-|-------------|-------------------|
-| "Blog articles" | `posts: { source: "source/_posts", sort: {field: "date", order: "desc"}, pagination: {perPage: 10, path: "/blog/page/{n}/"} }` |
-| "Project showcase" | `projects: { source: "source/_projects", sort: {field: "date", order: "desc"}, pagination: {perPage: 12, path: "/projects/page/{n}/"} }` |
-| "Landing page (single page)" | `landing: { source: "source/_landing", singleton: true }` |
-| "Documentation site" | `docs: { source: "source/_docs", sort: {field: "nav_order", order: "asc"}, tree: true }` |
-| "About page (singleton)" | `about: { source: "source/_about", singleton: true }` |
+Pick the adapter by **where the data lives**, not by what the page looks like. The page model is independent.
 
-### 2. `templates[].forEach` — Template Expansion Strategy
+| Where the data lives | Adapter | Example |
+|----------------------|---------|---------|
+| Local markdown files (`source/_posts/*.md`) | `markdown` | `{ "type": "markdown", "dir": "source/_posts" }` |
+| Build-time HTTP API | `http` | `{ "type": "http", "url": "https://api.../x", "auth": { "env": "X_TOKEN" } }` |
+| Local or remote JSON file | `json` | `{ "type": "json", "file": "data/changelog.json" }` |
+| Local or remote CSV file | `csv` | `{ "type": "csv", "url": "https://.../x.csv", "delimiter": "," }` |
+| RSS / Atom feed | `rss` | `{ "type": "rss", "url": "https://blog.example.com/feed" }` |
+| Hand-coded in the manifest | `inline` | `{ "type": "inline", "items": [...] }` |
+| Computed from another source (groupBy/filter/...) | `derived` | `{ "type": "derived", "from": "posts", "op": "groupBy", "field": "tags" }` |
 
-| Value | Meaning | Typical use |
-|-------|---------|-------------|
-| `"collections"` | one expansion per collection | List pages (one set for posts, another for projects) |
-| `"items"` | one expansion per content item in the collection | Detail pages, article pages, doc pages |
-| `"pagination"` | one expansion per paginated page | Paginated lists (combined with `pagination`) |
-| omitted | expand only once | Home, 404, singleton pages |
+Common optional fields across adapters:
 
-### 3. `output` — Output Path Template
+- `map` — rename/normalize fields into the standard item shape (`{ slug: "id", title: "name" }`).
+- `defaults` — fill missing values (`{ date: "" }` for APIs with no date).
+- `sort` — applied after the adapter produces items.
+- `tree` — assemble `parent`/`nav_order` tree for sidebar navigation.
+- `cache.key` / `cache.ttl` — remote sources only; default fallback `cache`.
+- `fallback` — `cache` / `empty` / `fail`.
+
+Required fields per adapter are enforced by `schemas/source.schema.json` `allOf` clauses.
+
+### 2. `views[].for` — Expansion Strategy
+
+A view expands into one or more concrete render tasks. Three shapes, source-type agnostic:
+
+| Value | Meaning | Binds |
+|-------|---------|-------|
+| `{ "each": "<source>" }` | one page per item | `item`, `source` |
+| `{ "paginate": "<source>", "perPage": N }` | one page per pagination slice | `items` (current slice), `pagination`, `page` (1-based), `source` |
+| `for` omitted | single page (home / 404 / computed) | nothing from `for`; reads from `use` and/or `data` |
+
+Optional `for.where` filters items before expansion (`field/value` pairs; array value = any-match).
+
+The page model is no longer a closed enum. `for.paginate` works on any source (an API list, a derived dataset, a CSV file). `for.each` works on a `groupBy` derived source → one page per tag/category/author — exactly the taxonomy behavior the v1 engine couldn't express.
+
+### 3. `views[].use` — Multi-Source Aggregation
+
+`use` injects the **full datasets** of named sources as top-level variables in the view's render data. Independent of `for`. This is what unlocks:
+
+- Home pages that show "recent posts" **and** "latest products" **and** "recent releases" in one template.
+- Dashboards that mix API stats with markdown commentary.
+- A single landing page that aggregates one item from each source.
+
+Example:
+
+```json
+{ "name": "home", "type": "page", "layout": "base", "file": "home.html",
+  "output": "/", "use": ["posts", "products", "releases"] }
+```
+
+The template can iterate `<% posts.forEach(p => { %>…<% }) %>` and `<% products.slice(0,6).forEach(p => { %>…<% }) %>` independently.
+
+### 4. `output` — Path Template
 
 Placeholders:
 
-- `{collection}` — collection name (available during expansion)
-- `{slug}` — content item slug (when `forEach: "items"`)
-- `{n}` — page number (when `forEach: "pagination"`)
-- `{lang}` — language code (for multi-language)
-- `{date:YYYY-MM-DD}` — date format
+- `{slug}` — current item's slug (under `for.each`)
+- `{n}` — current page number (under `for.paginate`)
+- `{lang}` — current language code (when `lang` is set)
+- `{source}` — originating source name
+- `{field}` — current item's `value` (useful with `for.each` over a `groupBy` derived source → `/tag/{field}/`)
+- `{date:YYYY-MM-DD}` — date format on `item.date`
 
-Examples:
+Paths are normalized by the engine: collapsed `//`, single trailing `/`, `index.html` appended at write time for directory paths.
 
-- `/{slug}/` — detail page: `/hello-world/`
-- `/blog/page/{n}/` — pagination: `/blog/page/2/`
-- `/projects/{slug}/` — project detail: `/projects/site-forge/`
-- `/{lang}/blog/{slug}/` — multi-language: `/zh/blog/hello/`
+### 5. `layout` & `file`
 
-### 4. `singleton` and `tree` — Special Shapes
+- `type=layout`: only `file` is required (e.g. `base.html` with the `<%~ body %>` slot).
+- `type=page`: requires both `layout` (name of a layout view) and `file` (page body template). A page without a layout is allowed only by deliberately passing `layout: null` — there is no implicit fallback.
 
-- `singleton: true` — **only render one item** (take the first) from the collection. Used for landing, about, singleton content.
-- `tree: true` — build a **tree structure** (based on `parent` / `nav_order` fields). Used for docs site sidebar, category tree.
+### 6. `lang` — Multi-Language Expansion
+
+If `lang: ["zh", "en"]` is set on a page view, the engine expands the view once per language and substitutes `{lang}`. The same mechanism works for any source.
 
 ---
 
-## Pattern Assembly Examples (for reference only; AI may compose new patterns on the spot)
+## Pattern Assembly (Reference, Not Exhaustive)
 
-### Pattern A: Pure Landing Page
+These are starting points. The model is open: combine sources, mix `for.each`/`for.paginate`/`use` freely, add a new adapter when needed.
 
-User: "Make a product landing page, only need the homepage"
+### Pattern A — Pure Landing Page
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "landing": { "source": "source/_landing", "singleton": true }
+  "version": 2,
+  "sources": {
+    "landing": { "type": "markdown", "dir": "source/_landing" }
   },
-  "templates": [
+  "views": [
     { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "landing", "type": "page", "layout": "base", "file": "landing.html", "output": "/",
-      "data": { "collection": "landing", "singleton": true } },
+    { "name": "landing", "type": "page", "layout": "base", "file": "landing.html", "output": "/" },
     { "name": "404", "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
   ]
 }
 ```
 
-### Pattern B: Blog / Portfolio
-
-User: "Tech blog + portfolio"
+### Pattern B — Blog / Portfolio (pure markdown)
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "posts": { "source": "source/_posts", "sort": { "field": "date", "order": "desc" },
-      "pagination": { "perPage": 10, "path": "/blog/page/{n}/" } },
-    "projects": { "source": "source/_projects", "sort": { "field": "date", "order": "desc" },
-      "pagination": { "perPage": 12, "path": "/projects/page/{n}/" } }
+  "version": 2,
+  "sources": {
+    "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
+    "projects": { "type": "markdown", "dir": "source/_projects", "sort": { "field": "date", "order": "desc" } }
   },
-  "templates": [
-    { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "index", "type": "page", "layout": "base", "file": "index.html", "output": "/" },
-    { "name": "list", "type": "page", "layout": "base", "file": "list.html",
-      "forEach": "collections" },
-    { "name": "detail", "type": "page", "layout": "base", "file": "detail.html",
-      "output": "/{collection}/{slug}/", "forEach": "items" },
-    { "name": "404", "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
+  "views": [
+    { "name": "base",      "type": "layout", "file": "base.html" },
+    { "name": "post",      "type": "page", "layout": "base", "file": "detail.html",  "output": "/blog/{slug}/",      "for": { "each": "posts" } },
+    { "name": "blog-list", "type": "page", "layout": "base", "file": "list.html",    "output": "/blog/page/{n}/",   "for": { "paginate": "posts", "perPage": 10 } },
+    { "name": "project",   "type": "page", "layout": "base", "file": "project.html", "output": "/projects/{slug}/","for": { "each": "projects" } },
+    { "name": "projects",  "type": "page", "layout": "base", "file": "list.html",    "output": "/projects/page/{n}/", "for": { "paginate": "projects", "perPage": 12 } },
+    { "name": "404",       "type": "page", "layout": "base", "file": "404.html",     "output": "/404/" }
   ]
 }
 ```
 
-### Pattern C: Documentation Site
-
-User: "Make a documentation site like VitePress"
+### Pattern C — Documentation (with tree sidebar)
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "docs": { "source": "source/_docs", "sort": { "field": "nav_order", "order": "asc" }, "tree": true }
+  "version": 2,
+  "sources": {
+    "docs": { "type": "markdown", "dir": "source/_docs", "sort": { "field": "nav_order", "order": "asc" }, "tree": true }
   },
-  "templates": [
-    { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "doc-index", "type": "page", "layout": "base", "file": "doc-index.html",
-      "output": "/docs/", "data": { "collection": "docs", "tree": true } },
-    { "name": "doc-page", "type": "page", "layout": "base", "file": "doc-page.html",
-      "output": "/docs/{slug}/", "data": { "collection": "docs", "tree": true },
-      "forEach": "items" },
-    { "name": "404", "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
+  "views": [
+    { "name": "base",      "type": "layout", "file": "base.html" },
+    { "name": "doc-index", "type": "page", "layout": "base", "file": "doc-index.html", "output": "/docs/", "use": ["docs"] },
+    { "name": "doc-page",  "type": "page", "layout": "base", "file": "doc-page.html",  "output": "/docs/{slug}/", "for": { "each": "docs" } },
+    { "name": "404",       "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
   ]
 }
 ```
 
-### Pattern D: Combined Site (Landing Homepage + Blog + Documentation)
+The doc-index template receives `docs.tree` (built by the markdown adapter from `parent`/`nav_order`) for the sidebar.
 
-User: "Product homepage + user blog + help docs"
+### Pattern D — API-backed app (the long tail)
+
+A user wants a product catalog pulled from an API, with tag aggregation pages. This is the exact shape v1 could not express.
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "landing": { "source": "source/_landing", "singleton": true },
-    "posts": { "source": "source/_posts", "sort": { "field": "date" },
-      "pagination": { "perPage": 10, "path": "/blog/page/{n}/" } },
-    "docs": { "source": "source/_docs", "sort": { "field": "nav_order" }, "tree": true }
+  "version": 2,
+  "sources": {
+    "products": {
+      "type": "http",
+      "url": "https://api.shop.example.com/v1/products",
+      "auth": { "env": "SHOP_API_TOKEN", "prefix": "Bearer " },
+      "select": "$.data.items",
+      "map": { "slug": "id", "title": "name", "cover": "image_url", "price": "unit_price" },
+      "defaults": { "date": "", "tags": [], "excerpt": "" },
+      "cache": { "ttl": 3600 },
+      "fallback": "cache",
+      "timeout": 15000
+    },
+    "tags": { "type": "derived", "from": "products", "op": "groupBy", "field": "tags" }
   },
-  "templates": [
-    { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "landing", "type": "page", "layout": "base", "file": "landing.html", "output": "/",
-      "data": { "collection": "landing", "singleton": true } },
-    { "name": "blog-list", "type": "page", "layout": "base", "file": "blog-list.html",
-      "forEach": "collections" },
-    { "name": "blog-detail", "type": "page", "layout": "base", "file": "blog-detail.html",
-      "output": "/blog/{slug}/", "forEach": "items" },
-    { "name": "doc-index", "type": "page", "layout": "base", "file": "doc-index.html",
-      "output": "/docs/", "data": { "collection": "docs", "tree": true } },
-    { "name": "doc-page", "type": "page", "layout": "base", "file": "doc-page.html",
-      "output": "/docs/{slug}/", "data": { "collection": "docs", "tree": true },
-      "forEach": "items" },
-    { "name": "404", "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
+  "views": [
+    { "name": "base",         "type": "layout", "file": "base.html" },
+    { "name": "home",         "type": "page", "layout": "base", "file": "home.html",      "output": "/", "use": ["products"] },
+    { "name": "product",      "type": "page", "layout": "base", "file": "product.html",   "output": "/shop/{slug}/", "for": { "each": "products" } },
+    { "name": "shop-list",    "type": "page", "layout": "base", "file": "list.html",      "output": "/shop/page/{n}/", "for": { "paginate": "products", "perPage": 12 } },
+    { "name": "tag",          "type": "page", "layout": "base", "file": "tag.html",       "output": "/shop/tag/{field}/", "for": { "each": "tags" } },
+    { "name": "404",          "type": "page", "layout": "base", "file": "404.html",       "output": "/404/" }
   ]
 }
 ```
 
-### Pattern E: Multi-Language Combined Site
+- `products` resolves to normalized items at build time (one snapshot per `cache.ttl`).
+- `tags` derives `{ slug, value, count, items }` per distinct tag → one page per tag with `{field}` substituted into the URL.
+- `home` aggregates the full `products` dataset via `use`.
 
-User: "Product landing + docs in Chinese and English"
+### Pattern E — Mixed Sources (markdown + API + JSON feed)
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "landing": { "source": "source/_landing", "singleton": true },
-    "docs": { "source": "source/_docs", "sort": { "field": "nav_order" }, "tree": true }
+  "version": 2,
+  "sources": {
+    "posts":      { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
+    "github":     { "type": "http", "url": "https://api.github.com/users/me/repos",
+                    "auth": { "env": "GH_TOKEN" }, "map": { "slug": "name", "title": "full_name", "cover": "owner.avatar_url" } },
+    "changelog":  { "type": "json", "file": "data/changelog.json" },
+    "tags":       { "type": "derived", "from": "posts", "op": "groupBy", "field": "tags" }
   },
-  "templates": [
-    { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "landing", "type": "page", "layout": "base", "file": "landing.html",
-      "output": "/{lang}/", "data": { "collection": "landing", "singleton": true },
-      "lang": ["zh", "en"] },
-    { "name": "doc-index", "type": "page", "layout": "base", "file": "doc-index.html",
-      "output": "/{lang}/docs/", "data": { "collection": "docs", "tree": true },
-      "lang": ["zh", "en"] },
-    { "name": "doc-page", "type": "page", "layout": "base", "file": "doc-page.html",
-      "output": "/{lang}/docs/{slug}/", "data": { "collection": "docs", "tree": true },
-      "forEach": "items", "lang": ["zh", "en"] },
-    { "name": "404", "type": "page", "layout": "base", "file": "404.html",
-      "output": "/{lang}/404.html", "lang": ["zh", "en"] }
+  "views": [
+    { "name": "base",     "type": "layout", "file": "base.html" },
+    { "name": "home",     "type": "page", "layout": "base", "file": "home.html",      "output": "/", "use": ["posts", "github", "changelog"] },
+    { "name": "post",     "type": "page", "layout": "base", "file": "detail.html",    "output": "/blog/{slug}/", "for": { "each": "posts" } },
+    { "name": "blog",     "type": "page", "layout": "base", "file": "list.html",      "output": "/blog/page/{n}/", "for": { "paginate": "posts", "perPage": 10 } },
+    { "name": "repo",     "type": "page", "layout": "base", "file": "repo.html",      "output": "/projects/{slug}/", "for": { "each": "github" } },
+    { "name": "tag",      "type": "page", "layout": "base", "file": "tag.html",       "output": "/tag/{field}/", "for": { "each": "tags" } },
+    { "name": "404",      "type": "page", "layout": "base", "file": "404.html",       "output": "/404/" }
   ]
 }
 ```
+
+This is a single pipeline with three different data origins and a derived source — none of which required any change to the engine.
+
+### Pattern F — Multi-language
+
+Same as A–E with `lang: ["zh", "en"]` on each page view and `{lang}` in `output`. The engine expands each page once per language; sources are shared (one markdown dir per language, or one multilingual content source, as the user chooses).
 
 ---
 
 ## Post-Generation Checklist
 
-After generating the manifest, the AI must self-check:
+The AI must self-verify before writing the file:
 
-- [ ] `version: 1` present
-- [ ] At least one template of `type: "layout"` (usually `base`)
-- [ ] Every `type: "page"` template references an existing layout
-- [ ] Every `type: "page"` template has `output`
-- [ ] Every `forEach: "items"` template corresponds to a collection that exists with a `source`
-- [ ] Every `forEach: "pagination"` template corresponds to a collection that defines `pagination`
-- [ ] Placeholders in `output` match the expansion strategy
-- [ ] `404` template exists
+- [ ] `version: 2`.
+- [ ] At least one source and one view.
+- [ ] At least one layout view exists.
+- [ ] Every `type=page` view references an existing layout name.
+- [ ] Every `type=page` view has `output`.
+- [ ] Every `for.each` / `for.paginate` references a source name that exists in `sources`.
+- [ ] Every `for.paginate` sets `perPage`.
+- [ ] Every `auth.env` is a name only (no value); the user has been told which env var to set.
+- [ ] Every remote source has a `fallback` (defaults to `cache`).
+- [ ] `404` view exists.
+
+If any check fails, fix and re-verify.
+
+---
+
+## GEO Note
+
+GEO outputs (`llms.txt`, `robots.txt`, per-page markdown mirror, JSON-LD) are **not declared in the manifest**. The engine emits them generically over the **markdown** sources. API / JSON / CSV / RSS / inline / derived items may appear in `llms.txt` link lists but have no markdown mirror (no source `.md` file). No `_geo/` directory; no separate authoring flow. See [`geo-conventions.md`](./geo-conventions.md).
 
 ---
 
 ## Hint to AI
 
-> You are a manifest architect. Your job:
-> 1. Understand the user's intent (landing / blog / docs / combined / multi-language, etc.)
-> 2. Assemble `template-manifest.json`'s `collections` and `templates` on the spot
-> 3. There is no "pattern enumeration" — any combination is possible
-> 4. Every new requirement is a new manifest; the engine interprets as usual
->
-> The output must be a valid JSON object matching `schemas/template-manifest.json`.
-> After generation, use the checklist to self-verify.
-
-## GEO Note
-
-GEO outputs (`/llms.txt`, `/robots.txt`, per-page markdown mirror, JSON-LD) are **not declared in `template-manifest.json`**. They are emitted automatically by `render.js` based on `source/_<type>/*.md` content + `config.geo.*`. The manifest does not need a `templates[]` entry for them, and adding one would be wrong.
-
-The only manifest-level concern is: detail/doc/project templates must use `forEach: "items"` so `render.js` can identify the source markdown path for the per-page mirror and emit per-item JSON-LD. Singletons and list pages are skipped by the mirror (their URL + index.md would be redundant or misleading).
+> You are a manifest architect.
+> 1. Ask **where the data lives** first (local / API / file / feed / computed). One entry per origin in `sources`.
+> 2. For each origin, ask what fields exist; map them to the standard item shape (`map`) and fill gaps (`defaults`).
+> 3. For APIs that need auth, ask the user for the env var name; record only the name in `auth.env`.
+> 4. Only then design views: which sources get per-item pages (`for.each`), which get lists (`for.paginate`), which aggregate on the home (`use`).
+> 5. Add a new adapter when a real need exceeds the seven built-ins; do not bend the engine.

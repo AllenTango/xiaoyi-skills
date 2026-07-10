@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xiaoyi-ssg Source Definition Schema",
+  "description": "A single data source definition. Every source is resolved by a Source Adapter into a normalized array of items. New source kinds are added by writing a new adapter under .xiaoyi-ssg/sources/ and adding a `type` here; the engine main loop does not change. Full contract, security, cache and fallback rules: prompts/data-sources.md.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["markdown", "http", "json", "csv", "rss", "inline", "derived"],
+      "description": "Adapter kind. `markdown` = local source/_*/*.md (default content). `http` = build-time fetch of a remote API. `json`/`csv` = local or remote structured file. `rss` = feed. `inline` = literal items embedded in the manifest. `derived` = computed from another source."
+    },
+
+    "sort": {
+      "type": "object",
+      "description": "Applied after the adapter produces items and after any map/normalize step.",
+      "properties": {
+        "field": { "type": "string" },
+        "order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }
+      }
+    },
+    "tree": {
+      "type": "boolean",
+      "default": false,
+      "description": "Build a tree structure from `parent`/`nav_order` fields (for sidebar navigation). Applies to any source kind, not just markdown."
+    },
+    "map": {
+      "type": "object",
+      "description": "Field remapping to normalize adapter output into the standard item shape. Keys are target fields (title, slug, date, cover, excerpt, tags, ...); values are source field names or JSONPath-lite expressions. Fields not listed are still carried through onto the item.",
+      "additionalProperties": { "type": "string" }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default values merged under each item when a mapped/normalized field is absent (e.g. a `date` for API items that lack one).",
+      "additionalProperties": true
+    },
+
+    "dir": {
+      "type": "string",
+      "description": "type=markdown: content directory relative to site root, e.g. 'source/_posts'."
+    },
+
+    "url": {
+      "type": "string",
+      "description": "type=http|json|csv|rss: absolute URL fetched at BUILD TIME only. Never fetched in the browser. Never a source of secrets in itself."
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST"],
+      "default": "GET",
+      "description": "type=http: HTTP method."
+    },
+    "headers": {
+      "type": "object",
+      "description": "type=http: static request headers (non-secret). For secrets use `auth`.",
+      "additionalProperties": { "type": "string" }
+    },
+    "body": {
+      "description": "type=http POST: request body. Object is JSON-encoded; string is sent as-is.",
+      "anyOf": [{ "type": "object" }, { "type": "string" }]
+    },
+    "auth": {
+      "type": "object",
+      "description": "Secret injection. The secret value is read from process.env at build time and MUST NOT be written into public/, the source snapshot cache, or any manifest field. Only the env var NAME is stored.",
+      "required": ["env"],
+      "properties": {
+        "env": {
+          "type": "string",
+          "description": "Environment variable name holding the secret (e.g. 'PRODUCTS_API_TOKEN'). Read via process.env at build time."
+        },
+        "header": {
+          "type": "string",
+          "default": "Authorization",
+          "description": "Request header the secret is placed in."
+        },
+        "query": {
+          "type": "string",
+          "description": "Alternatively, place the secret as a query parameter with this name (for APIs requiring ?api_key=...)."
+        },
+        "prefix": {
+          "type": "string",
+          "default": "",
+          "description": "String prepended to the secret value, e.g. 'Bearer '."
+        }
+      },
+      "additionalProperties": false
+    },
+    "select": {
+      "type": "string",
+      "description": "type=http|json: JSONPath-lite expression selecting the item array from the response, e.g. '$.data.items' or '$.results'. Omit if the response root is already the array."
+    },
+
+    "file": {
+      "type": "string",
+      "description": "type=json|csv: local file path relative to site root, e.g. 'data/changelog.json'. Mutually exclusive with `url`."
+    },
+    "delimiter": {
+      "type": "string",
+      "default": ",",
+      "description": "type=csv: column delimiter."
+    },
+
+    "items": {
+      "type": "array",
+      "description": "type=inline: literal item array embedded in the manifest.",
+      "items": { "type": "object" }
+    },
+
+    "from": {
+      "type": "string",
+      "description": "type=derived: name of the source this one is computed from."
+    },
+    "op": {
+      "type": "string",
+      "enum": ["groupBy", "filter", "map", "flatten", "unique", "count"],
+      "description": "type=derived: transform applied to the `from` source. groupBy produces one item per distinct value of `field` (with `{ slug, value, count, items }`); filter keeps items matching `where`; etc."
+    },
+    "field": {
+      "type": "string",
+      "description": "type=derived: field the op operates on (e.g. groupBy field='tags')."
+    },
+    "where": {
+      "type": "object",
+      "description": "type=derived op=filter: field/value match conditions.",
+      "additionalProperties": true
+    },
+
+    "cache": {
+      "type": "object",
+      "description": "Build-time snapshot cache for remote sources (http/json/csv/rss). The response is snapshotted to .xiaoyi-ssg/.cache/sources/<key>.json so offline/CI-without-secret builds can be reproduced via fallback='cache'. Snapshots MUST NOT contain secrets.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Stable cache key. Defaults to a hash of the source definition (minus secrets) when omitted."
+        },
+        "ttl": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds the snapshot is considered fresh; within TTL the adapter reuses the snapshot without re-fetching. 0 = always refetch."
+        }
+      },
+      "additionalProperties": false
+    },
+    "fallback": {
+      "type": "string",
+      "enum": ["cache", "empty", "fail"],
+      "default": "cache",
+      "description": "Behavior when a remote fetch fails (network error, non-2xx, missing secret): 'cache' = use the last snapshot if present else empty; 'empty' = produce zero items and warn; 'fail' = abort the build with a non-zero exit."
+    },
+    "timeout": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 15000,
+      "description": "type=http|json|csv|rss: fetch timeout in milliseconds."
+    }
+  },
+
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "markdown" } } }, "then": { "required": ["dir"] } },
+    { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
+    { "if": { "properties": { "type": { "const": "rss" } } }, "then": { "required": ["url"] } },
+    { "if": { "properties": { "type": { "const": "inline" } } }, "then": { "required": ["items"] } },
+    { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } }
+  ]
+}

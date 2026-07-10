@@ -1,111 +1,127 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "xiaoyi-ssg Template Manifest Schema",
+  "description": "A site is described by two orthogonal, open abstractions: `sources` (where data comes from) and `views` (how pages are generated). The engine treats every source uniformly regardless of adapter type. See prompts/template-manifest-generation.md.",
   "type": "object",
-  "required": ["version", "collections", "templates"],
+  "required": ["version", "sources", "views"],
   "properties": {
     "version": {
       "type": "integer",
-      "const": 1,
+      "const": 2,
       "description": "Manifest schema version"
     },
-    "collections": {
+    "sources": {
       "type": "object",
-      "description": "Content collections sourced from source/_*/",
+      "description": "Named data sources. Each key is a source name; each value is a source definition resolved by a Source Adapter (markdown / http / json / csv / rss / inline / derived). See prompts/data-sources.md.",
+      "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["source"],
+        "required": ["type"],
         "properties": {
-          "source": {
+          "type": {
             "type": "string",
-            "description": "Relative path from site root, e.g., 'source/_posts'"
+            "enum": ["markdown", "http", "json", "csv", "rss", "inline", "derived"]
           },
+          "dir":       { "type": "string", "description": "type=markdown: content directory relative to site root" },
+          "url":       { "type": "string", "description": "type=http|json|csv|rss: absolute URL fetched at BUILD TIME only" },
+          "file":      { "type": "string", "description": "type=json|csv: local file path relative to site root" },
+          "method":    { "type": "string", "enum": ["GET", "POST"], "default": "GET" },
+          "headers":   { "type": "object", "additionalProperties": { "type": "string" } },
+          "body":      { "description": "type=http POST: request body (object → JSON-encoded, string → raw)", "anyOf": [{ "type": "object" }, { "type": "string" }] },
+          "auth": {
+            "type": "object",
+            "required": ["env"],
+            "description": "Secret injection. Only the env var NAME is stored; the value is read from process.env at build time and never written to public/ or snapshots.",
+            "properties": {
+              "env":    { "type": "string", "description": "Environment variable name holding the secret" },
+              "header": { "type": "string", "default": "Authorization" },
+              "query":  { "type": "string" },
+              "prefix": { "type": "string", "default": "" }
+            },
+            "additionalProperties": false
+          },
+          "select":    { "type": "string", "description": "JSONPath-lite expression selecting the item array from the response" },
+          "items":     { "type": "array", "description": "type=inline: literal item array", "items": { "type": "object" } },
+          "from":      { "type": "string", "description": "type=derived: name of the source this one is computed from" },
+          "op":        { "type": "string", "enum": ["groupBy", "filter", "map", "flatten", "unique", "count"], "description": "type=derived: transform applied to the `from` source" },
+          "field":     { "type": "string", "description": "type=derived: field the op operates on" },
+          "where":     { "type": "object", "description": "type=derived op=filter: field/value match conditions", "additionalProperties": true },
+          "map":       { "type": "object", "description": "Field remapping into the standard item shape", "additionalProperties": { "type": "string" } },
+          "defaults":  { "type": "object", "description": "Default values merged under each item when a mapped/normalized field is absent", "additionalProperties": true },
           "sort": {
             "type": "object",
             "properties": {
-              "field": { "type": "string", "default": "date" },
+              "field": { "type": "string" },
               "order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }
             }
           },
-          "pagination": {
+          "tree":      { "type": "boolean", "default": false, "description": "Build a tree structure from parent/nav_order fields" },
+          "delimiter": { "type": "string", "default": ",", "description": "type=csv: column delimiter" },
+          "cache": {
             "type": "object",
+            "description": "Build-time snapshot cache for remote sources (http/json/csv/rss). Snapshots are written to .xiaoyi-ssg/.cache/sources/<key>.json (git-ignored).",
             "properties": {
-              "perPage": { "type": "integer", "minimum": 1, "maximum": 100 },
-              "path": { "type": "string", "description": "Output path template with {n} placeholder, e.g., '/blog/page/{n}/'" }
+              "key": { "type": "string" },
+              "ttl": { "type": "integer", "minimum": 0, "description": "Seconds the snapshot is considered fresh; 0 = always refetch" }
             },
-            "required": ["perPage", "path"]
+            "additionalProperties": false
           },
-          "singleton": {
-            "type": "boolean",
-            "default": false,
-            "description": "Only use first item, render single page"
-          },
-          "tree": {
-            "type": "boolean",
-            "default": false,
-            "description": "Build tree structure from nav_order/parent fields for sidebar navigation"
-          }
-        }
-      }
-    },
-    "templates": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name", "type", "file"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Unique template identifier"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["layout", "page"],
-            "description": "layout = base template with body slot; page = renders to output"
-          },
-          "layout": {
-            "type": "string",
-            "description": "Layout template name (required for type=page)"
-          },
-          "file": {
-            "type": "string",
-            "description": "Template filename in templates/ directory"
-          },
-          "output": {
-            "type": "string",
-            "description": "Output path template. Supports placeholders: {collection}, {slug}, {n}, {lang}, {date:YYYY}, etc."
-          },
-          "data": {
-            "type": "object",
-            "description": "Static data bindings for this template"
-          },
-          "forEach": {
-            "type": "string",
-            "enum": ["collections", "items", "pagination"],
-            "description": "Expansion strategy: per collection / per item / per pagination page"
-          },
-          "lang": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "If set, expand for each language code (adds {lang} placeholder)"
-          }
+          "fallback":  { "type": "string", "enum": ["cache", "empty", "fail"], "default": "cache", "description": "Behavior when a remote fetch fails" },
+          "timeout":   { "type": "integer", "minimum": 0, "default": 15000, "description": "Fetch timeout in milliseconds" }
         },
         "allOf": [
-          {
-            "if": { "properties": { "type": { "const": "page" } } },
-            "then": { "required": ["layout", "output"] }
-          }
+          { "if": { "properties": { "type": { "const": "markdown" } } }, "then": { "required": ["dir"] } },
+          { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
+          { "if": { "properties": { "type": { "const": "rss" } } }, "then": { "required": ["url"] } },
+          { "if": { "properties": { "type": { "const": "inline" } } }, "then": { "required": ["items"] } },
+          { "if": { "properties": { "type": { "const": "derived" } } }, "then": { "required": ["from", "op"] } }
+        ]
+      }
+    },
+    "views": {
+      "type": "array",
+      "description": "View nodes. Each view is either a layout (type=layout) or a page generator (type=page). Page views expand via `for`.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name":    { "type": "string" },
+          "type":    { "type": "string", "enum": ["layout", "page"] },
+          "file":    { "type": "string", "description": "Template filename in templates/" },
+          "layout":  { "type": "string", "description": "Name of a layout view (required when type=page)" },
+          "output":  { "type": "string", "description": "Output path template. Placeholders: {slug}, {n}, {lang}, {source}, {field}, {date:FMT}" },
+          "for": {
+            "type": "object",
+            "description": "Expansion strategy. Omit `for` entirely for a single page (home, 404, computed).",
+            "properties": {
+              "each":     { "type": "string", "description": "Source name. One output page per item." },
+              "paginate": { "type": "string", "description": "Source name. One output page per pagination slice." },
+              "perPage":  { "type": "integer", "minimum": 1, "maximum": 200, "description": "Items per page. Required when `paginate` is set." },
+              "where":    { "type": "object", "description": "Optional filter before expansion", "additionalProperties": true }
+            },
+            "additionalProperties": false,
+            "not": { "required": ["each", "paginate"] }
+          },
+          "use":  { "type": "array", "items": { "type": "string" }, "description": "Source names whose full datasets are injected as top-level variables (multi-source aggregation)" },
+          "data": { "type": "object" },
+          "lang": { "type": "array", "items": { "type": "string" }, "description": "If set, expand once per language code (adds {lang} placeholder)" }
+        },
+        "allOf": [
+          { "if": { "properties": { "type": { "const": "layout" } } }, "then": { "required": ["file"] } },
+          { "if": { "properties": { "type": { "const": "page" } } }, "then": { "required": ["file", "layout", "output"] } }
         ]
       }
     },
     "globals": {
       "type": "object",
-      "description": "Global data available to all templates",
+      "description": "Global data available to every view",
       "properties": {
-        "site": { "type": "string", "default": "config.site" },
-        "nav": { "type": "string", "default": "computed.nav" },
+        "site":   { "type": "string", "default": "config.site" },
+        "nav":    { "type": "string", "default": "computed.nav" },
         "tokens": { "type": "string", "default": "designTokens" }
       }
     }
-  }
+  },
+  "additionalProperties": false
 }

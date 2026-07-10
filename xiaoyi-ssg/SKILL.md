@@ -40,16 +40,19 @@ The skill content is independent of any specific AI client. Clients are assumed 
 
 ## Required Reading — Pipeline Generation Constraints
 
-> Mandatory: before writing any `render.js` / `dev.js` / Eta template, the AI must read these 5 files. Skipping them produces broken output. These are hard rules derived from v1.0.0 testing.
+> Mandatory: before writing any `render.js` / `dev.js` / Eta template, the AI must read these files. Skipping them produces broken output. These are hard rules derived from v1.0.0 testing plus the v2 engine model.
 
 | File | Reason |
 |------|--------|
 | [`templates/conventions.md`](./templates/conventions.md) | Eta syntax (`<%~ body %>` not `<%-`), variable binding (top-level not `it.`), custom field flattening, 5-step self-test. |
-| [`prompts/render-node-spec.md`](./prompts/render-node-spec.md) | Full spec of `render.js` / `dev.js`, `expandTemplates` rules, 5-step mandatory self-test. |
-| [`prompts/pipeline-generation.md`](./prompts/pipeline-generation.md) | Full pipeline generation guide, `package.json` dependencies, `template-manifest` decisions. |
+| [`prompts/render-node-spec.md`](./prompts/render-node-spec.md) | v2 engine: `loadSources` + `expandViews`, mandatory self-test, port auto-increment. |
+| [`prompts/data-sources.md`](./prompts/data-sources.md) | Source Adapters: markdown / http / json / csv / rss / inline / derived. Secrets only from `process.env`, never to `public/`. Cache + fallback. |
+| [`prompts/pipeline-generation.md`](./prompts/pipeline-generation.md) | Full pipeline generation guide, `package.json` dependencies, sources/ directory layout. |
 | [`prompts/design-system-extraction.md`](./prompts/design-system-extraction.md) | Rules for normalizing `frontend-design` content into xiaoyi tokens. |
-| [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md) | `template-manifest.json` field definitions, pattern examples. |
-| [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) | GEO source discipline (existing content = source), llms.txt / robots.txt / JSON-LD / md mirror specs. |
+| [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md) | v2 manifest: `sources + views` patterns, open-ended assembly. |
+| [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) | GEO source discipline (markdown sources = source), llms.txt / robots.txt / JSON-LD / md mirror specs. |
+| [`schemas/template-manifest.json`](./schemas/template-manifest.json) | v2 manifest JSON Schema (sources + views). |
+| [`schemas/source.schema.json`](./schemas/source.schema.json) | Source Adapter definition JSON Schema. |
 
 ## First Rules
 
@@ -88,27 +91,30 @@ Generated sites should follow this layout:
 ├── .xiaoyi-ssg-cache.json
 ├── source/
 │   ├── _media/
-│   └── _<type>/
+│   └── _<type>/            # markdown content (when used)
 ├── .xiaoyi-ssg/
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── node_modules/
-│   ├── render.js              # core render (manifest-driven, main loop < 150 lines)
-│   ├── dev.js                 # dev server (manifest watching)
-│   ├── templates/             # declared by template-manifest.json
+│   ├── render.js           # v2 engine: loadSources + expandViews
+│   ├── dev.js              # dev server (manifest + adapter watching)
+│   ├── sources/            # Source Adapters (markdown/http/json/csv/rss/inline/derived)
+│   ├── templates/          # declared by template-manifest.json
 │   ├── assets/
 │   │   ├── style.css
 │   │   ├── script.js
 │   │   ├── interactions/
 │   │   └── data/
-│   ├── template-manifest.json # single source of truth
-│   ├── content-types.json
+│   ├── .cache/             # remote source snapshots (git-ignored)
+│   │   └── sources/
+│   ├── template-manifest.json   # v2 single source of truth: sources + views
+│   ├── content-types.json       # markdown front-matter schema (render.js does not read this)
 │   ├── interactions.manifest.json
 │   └── pipeline-manifest.json
 └── public/
 ```
 
-Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `public/`, `.xiaoyi-ssg-cache.json`.
+Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `public/`, `.xiaoyi-ssg-cache.json`, `.xiaoyi-ssg/.cache/`.
 
 ## GEO (Generative Engine Optimization)
 
@@ -127,20 +133,43 @@ Every generated site ships with GEO-ready artifacts, derived from the user's exi
 
 See [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) for the full spec (output formats, schema mapping, cache participation, common pitfalls).
 
+## v2 Engine Model (Source + View)
+
+> The v2 engine is structurally open. There is no "blog mode" / "docs mode" / "landing mode" baked in.
+
+A site is described by two orthogonal, open abstractions:
+
+- **`sources`** — named data origins. Each source is resolved by a Source Adapter (markdown / http / json / csv / rss / inline / derived) into the same normalized item shape. New kinds = add one adapter file under `.xiaoyi-ssg/sources/<type>.js` + one `enum` entry in `schemas/source.schema.json`; the engine does not change.
+- **`views`** — page generators. Each view is either a layout (`type=layout`) or a page (`type=page`). Pages expand into concrete tasks via one of three shapes, source-type agnostic:
+  - `for.each: <source>` → one page per item (detail, product, repo, tag page, ...).
+  - `for.paginate: <source>` → one page per pagination slice (list, archive, paginated API, ...).
+  - `for` omitted → single page (home, 404, computed). May pull data from multiple sources via `use: [...]`.
+
+Concretely, this removes three v1 limitations at once:
+
+- **API-backed apps are first-class**: `{ type: "http", url, auth: { env } }` is a source like any other; products / GitHub repos / Notion pages / RSS feeds all render through the same `for.each` mechanism as markdown posts.
+- **Aggregation / taxonomy pages are first-class**: a `derived` source of `op: "groupBy"` produces one item per distinct tag/category/author, and a `for.each` view over it emits one `/tag/{field}/` page per group.
+- **Multi-source home pages are first-class**: `use: ["posts", "products", "releases"]` injects each dataset as a top-level variable; the home template iterates them independently.
+
+Full contract: [`prompts/data-sources.md`](./prompts/data-sources.md), [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md), [`prompts/render-node-spec.md`](./prompts/render-node-spec.md).
+
+**v1 → v2 is a breaking change.** There is no compatibility shim. Manifests from v1 must be rewritten in the `sources + views` form. The user owns the version bump decision; the AI only proposes.
+
 ## Intent Routing
 
 | Intent | Trigger examples | Required files |
 |--------|------------------|----------------|
-| init / new site | "create a portfolio site" | prompts/content-type-definition, prompts/template-manifest-generation, prompts/design-system-extraction, prompts/pipeline-generation, prompts/render-node-spec |
+| init / new site | "create a portfolio site" | prompts/template-manifest-generation, prompts/data-sources, prompts/design-system-extraction, prompts/pipeline-generation, prompts/render-node-spec |
 | style/theme/reference change | "switch to a cleaner style", "like xxx.com" | prompts/reference-analysis (if URL/screenshot), prompts/design-system-extraction, prompts/template-manifest-generation, prompts/pipeline-generation, prompts/render-node-spec |
-| content type add/change | "add a 'project' type" | prompts/content-type-definition; update `.xiaoyi-ssg/content-types.json` and `template-manifest.json` |
+| content type add/change | "add a 'project' type" | prompts/content-type-definition (for markdown); update `.xiaoyi-ssg/content-types.json` and the corresponding markdown `source` + `view` in `template-manifest.json` |
+| **data source add/change** | "pull from this API / fetch this feed / aggregate by tag" | prompts/data-sources, prompts/template-manifest-generation; update `template-manifest.json` (`sources` + `view` consuming it); regenerate pipeline |
 | interaction add/change | "add search/filter/lightbox" | prompts/pipeline-generation, prompts/render-node-spec |
 | new content | "add a new article" | create file only; do not regenerate pipeline unless content model changes |
 | content edit | "change the title/add a tag" | modify only the confirmed content file |
 | build | "build/generate/publish" | `node .xiaoyi-ssg/render.js` (from `<SITE_ROOT>`) or `npm run build` (from `<PIPELINE_DIR>`) |
-| dev | "dev/realtime preview/watch" | `node .xiaoyi-ssg/dev.js` (includes live reload) |
+| dev | "dev/realtime preview/watch" | `node .xiaoyi-ssg/dev.js` (includes live reload). Remote sources are not re-fetched on every keystroke — respect each source's `cache.ttl`; use `npm run build:fresh` to force re-fetch. |
 | preview | "preview" | use `dev.js` or open `public/index.html` directly |
-| diagnose | "check/diagnose" | scan config, tokens, content types, manifest, source frontmatter, build output; do not modify files unless asked |
+| diagnose | "check/diagnose" | scan config, tokens, sources, manifest, source frontmatter, build output; do not modify files unless asked |
 
 ## Pipeline Rules
 
@@ -185,21 +214,39 @@ After changing this skill:
 npx skills add /absolute/path/to/xiaoyi-skills --list
 ```
 
-## Common Pitfalls (learned from real tests)
+## Common Pitfalls (v2 — learned from real tests)
 
-When a generated pipeline renders empty pages, check these first:
+When a generated pipeline renders empty pages, leaks secrets, or fails expansion, check these first.
+
+### Rendering
 
 1. **Empty `<main>` after first build** — 90% of the time it's the base layout. Must be `<%~ body %>`, not `<%- body %>` (Eta does not recognize `<%-`).
-2. **List/index template renders nothing** — templates are using `it.col` or `it.recentPosts`. Eta with `useWith: true` does NOT bind `it`. Use top-level variables: `<%= col %>`, `<%= recentItems %>`.
-3. **Custom fields like `year`, `tech_stack` show `undefined`** — `render.js`'s `scanCollections` must spread `...data` onto each item so `item.year` works without going through `item.customFields.year`. The spec requires this — confirm the generated `render.js` includes `...data` in the item builder.
-4. **`recentPosts is not defined`** — `render.js`'s globals and template names must match. Use `recentItems` / `allItemsUrl` as generic globals; if you want `recentPosts` style, pick one and stick to it.
-5. **Hardcoded `collections.post` in `render.js`** — breaks any non-post collection. Replace with `Object.values(collections).flatMap(c => c.items)` or use the `primaryColName` lookup pattern.
-6. **`contentTypes.types[name]` undefined** — `content-types.json` may use `collections` key. `render.js` must read both: `(contentTypes.types || contentTypes.collections || {})[name]`.
-7. **page-detail template expands to all collections** — `manifest` must explicitly declare `data.collection`; `render.js` must not fall back to expanding for all collections.
-8. **`forEach: collections` non-paginated branch overwrites paginated branch** — use `/${collectionName}/` to reconstruct the path; do not use `tpl.output` directly.
-9. **Date field parsed by js-yaml as Date** — `<time datetime>` outputs `Wed Jul 08 2026 18:00:00 GMT+0800` instead of ISO. `render.js` must explicitly call `String(data.date)`.
+2. **Templates use `it.foo`** — Eta with `useWith: true` does NOT bind `it`. Use top-level variables: `<%= site.title %>`, `<%= item.price %>`, `<%= recentItems %>`.
+3. **Custom fields like `year`, `tech_stack`, `price` show `undefined`** — the adapter's `normalizeItem` must spread all keys to the top level. Templates access `item.year`, `item.tech_stack`, `item.price` directly; no `item.customFields.*`.
+4. **Home template wants `recentPosts` but the source isn't posts** — do not invent per-source globals. Use the generic `recentItems` / `allItemsUrl` computed by the engine, or declare `use: [...]` on the home view and iterate the injected datasets.
+5. **Hardcoded source names in `render.js`** — the engine must not special-case `posts` / `products` / etc. Always iterate `Object.keys(datasets)` or `Object.values(datasets).flatMap(d => d)`.
+6. **Detail view expands for the wrong source** — `for.each` / `for.paginate` MUST name a source that exists in `sources`. The engine throws on unknown source names; do not silently expand for all sources as a "fallback".
+7. **Pagination page shows wrong items** — `for.paginate` requires `perPage`. `expandViews` slices the filtered dataset in order; verify `sort` is set on the source if order matters.
+8. **Derived source is empty** — verify `from` resolves first (topological order is automatic; cycles throw). For `groupBy`, the `field` must exist on items of the source.
+9. **Date field parsed by js-yaml as Date** — `<time datetime>` outputs `Wed Jul 08 2026 18:00:00 GMT+0800` instead of ISO. `normalizeItem` must explicitly call `String(item.date)`.
 10. **Tokens color change does not update `public/assets/style.css`** — must regenerate the `:root` CSS variable block from tokens.
 11. **dev server `/post/` path triggers EISDIR** — the trailing `/` of `urlPath` must append `index.html`.
+
+### Data layer / security
+
+12. **Auth header sent as `Bearer undefined`** — `auth.env` is set in `template-manifest.json` but the env var is not actually present in the build environment. The adapter must NOT send an empty/broken header; follow `fallback` (`cache` / `empty` / `fail`) instead.
+13. **Secret value ends up in `public/`** — every secret comes from `process.env` at build time. The `assertNoSecretsInOutput` self-test greps `public/` for resolved secret values and fails the build on any match. If a snapshot contains a secret, the adapter must scrub it before writing the cache.
+14. **HTTP fetch never falls back** — `fallback` defaults to `cache`. For load-bearing sources (the only product source of a shop), set `fallback: "fail"` so the build aborts loudly rather than silently producing an empty site.
+15. **dev rebuilds hammer the API on every keystroke** — dev must NOT re-fetch remote sources on every change; it respects each source's snapshot + `cache.ttl`. To force a re-fetch in dev, set `cache.ttl: 0` or run `npm run build:fresh`.
+16. **`http` adapter is missing for a custom type** — adding a new source kind requires writing `.xiaoyi-ssg/sources/<type>.js` (exporting `async load(def, ctx)`) AND adding the `type` to `schemas/source.schema.json` `enum`. Otherwise the engine throws `Unknown source type`.
+17. **Derived source cycle** — A is `from: B`, B is `from: A`. Topological sort fails; the engine throws. Verify the dependency graph.
+
+### Manifest / views
+
+18. **Empty `views` array** — every site needs at least one view (and at least one layout view).
+19. **Page view without `layout`** — `type=page` requires a layout name. The engine does not silently fall back to raw output.
+20. **Page view without `output`** — `type=page` requires `output`. The engine does not silently fall back.
+21. **`use: [...]` names a non-existent source** — engine throws; do not silently drop the variable.
 
 For full rules and examples see [`templates/conventions.md`](./templates/conventions.md) and [`prompts/render-node-spec.md`](./prompts/render-node-spec.md).
 
@@ -225,6 +272,17 @@ Generated sites must work on **any device, any browser, any viewport size** with
 - Use `dvh` / `svh` units (not `vh`) for full-viewport sections to handle iOS Safari's dynamic chrome.
 - Test layouts at 360px (small phone), 768px (tablet), 1280px (desktop), 1920px (wide desktop).
 - Respect `prefers-reduced-motion` and `prefers-color-scheme` as users' actual preference, not just a CSS class toggle.
+
+## Build-time fetch & secrets (Hard Rules)
+
+> The engine is build-time fetch only. The browser never talks to an authed API.
+
+- Secrets live in `process.env` and only at build time. The manifest stores only the env var **name** (`source.auth.env`); the value never appears in any artifact.
+- No secret value is allowed in `public/**`, `assets/data/*.json`, the source snapshot cache (`.xiaoyi-ssg/.cache/sources/`), `pipeline-manifest.json`, logs, or error messages.
+- `render.js` must run `assertNoSecretsInOutput(manifest.sources)` after build and exit non-zero on any leak. This is part of the mandatory self-test.
+- If a future need requires a public read-only key in the browser, that is a separate, explicitly-flagged feature — do not enable it implicitly here. Ask the user.
+
+See [`prompts/data-sources.md`](./prompts/data-sources.md) § Security for the full rule set.
 
 ## Design System Delegation (Mandatory)
 

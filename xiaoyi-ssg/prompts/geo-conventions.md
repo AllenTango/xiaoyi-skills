@@ -184,7 +184,7 @@ Output: per-page `/<page-url>/index.md`.
 Rules:
 
 - Only runs when `config.geo.markdown_mirror !== false`
-- Only mirrors `forEach: "items"` outputs (detail pages, doc pages, project pages, etc.) — never mirror singleton or list pages
+- Only mirrors `for.each` outputs (detail pages, doc pages, project pages, etc.) — never mirror singleton or list pages, and never mirror pages whose item came from a non-markdown source (API/JSON/CSV/RSS/derived items have no source `.md` file). The mirror is gated by `contentFileMap`, which the markdown adapter populates.
 - For each mirrored page: read the source `.md` file, strip frontmatter, write to `public/<pageUrl>/index.md`
 - Strip frontmatter means: remove the leading `---\n...\n---\n` if present; if absent, copy as-is
 - The mirror preserves the raw markdown body unchanged — do not re-render to HTML, do not add wrappers
@@ -249,13 +249,13 @@ After `generateFeed` and `generateSitemap`, call (in this order):
 buildExtras(...);
 generateFeed(...);
 generateSitemap(...);
-generateLlmsTxt(collections, config, contentTypes);    // always
-if (config.geo?.llms_full) generateLlmsFullTxt(collections, config);  // opt-in
+generateLlmsTxt(datasets, config, contentTypes);    // always
+if (config.geo?.llms_full) generateLlmsFullTxt(datasets, config);  // opt-in
 generateRobotsTxt(config);                              // always
 mirrorMarkdown(tasks, contentFileMap, config);          // always (when enabled)
 ```
 
-`contentFileMap` is a `Map<pageUrl, sourceMdPath>` built during `scanCollections` — for each `forEach: "items"` task, record `{ task.output: sourceFile }`.
+`contentFileMap` is a `Map<pageUrl, sourceMdPath>` built by the **markdown** Source Adapter during `loadSources` — for each item the adapter records `{ item.url: sourceFile }`. The mirror then writes a markdown file only for tasks whose `output` is in `contentFileMap`. Tasks whose items came from `http`/`json`/`csv`/`rss`/`inline`/`derived` are skipped by the mirror.
 
 ### Cache Participation
 
@@ -326,7 +326,7 @@ No additional paths needed — GEO outputs are derived from content + config, bo
 4. **`robots.txt` with conflicting directives** — when `config.geo.noai === true`, the `User-agent: *` block must say `Disallow: /`, not `Allow: /`. The AI bot blocks below follow `config.geo.ai_bots`, not `noai`. These are independent policies.
 5. **Markdown mirror copies `body_html`** — must be the raw source markdown with frontmatter stripped. Re-reading the original `.md` file (not the parsed item) is mandatory.
 6. **Per-page `noai: true` does not remove JSON-LD** — page-level `noai` only injects `<meta name="robots" content="noai">`. JSON-LD is content metadata for AI to read; the meta robots tag is the opt-out. These are separate concerns.
-7. **Mirroring singleton pages** — `/about/index.md` for an about page is meaningless; skip singleton outputs. Mirror only `forEach: "items"` outputs.
+7. **Mirroring singleton or non-markdown pages** — `/about/index.md` for an about page is meaningless; skip singleton outputs. Mirror only `for.each` outputs whose items came from a markdown source (i.e. present in `contentFileMap`). Pages whose items came from API/JSON/CSV/RSS/derived sources have no source `.md` and must not be mirrored.
 8. **JSON-LD `inLanguage` missing on multilingual sites** — always pull from `site.language` (BCP 47). If the site has per-page language overrides, use the page-level value.
 
 ---

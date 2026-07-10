@@ -1,7 +1,8 @@
 # AGENTS.md — xiaoyi-ssg Development Guide
 
 > 当前版本：v1.0.0  
-> 最后更新：2026-07-09
+> 最后更新：2026-07-10  
+> 当前主干：v2 引擎（sources + views 模型），源码侧尚未发版
 
 本文件用于开发/维护 `xiaoyi-ssg` skill（位于 `<SKILL_DIR>`）时的 AI 协作约定。**它不是生成站点的指导**（生成站点的指导在生成的渲染管线中）。
 
@@ -86,6 +87,19 @@ The above rule controls **files written by the AI**. A separate rule governs
 - **`source/_<type>/*.md` frontmatter may need GEO extensions** (`summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai`) — but these are optional. When absent, `render.js` must auto-derive (`summary` from first paragraph) rather than emit empty values.
 - **`source/_<type>/*.md` content itself is read directly for the markdown mirror**, not the rendered `body_html`. The mirror writes the raw markdown body with frontmatter stripped.
 
+### 6. v2 Engine Model & Build-time Security
+
+The v2 engine is described in detail in `SKILL.md` § v2 Engine Model and `prompts/data-sources.md` / `prompts/render-node-spec.md`. The following are mandatory invariants for any modification of this skill.
+
+- **No v1 shim.** There is no compatibility layer with the v1 `collections` / `forEach` manifest model. v1 manifests must be rewritten in the v2 `sources + views` form. Do not reintroduce a shim "for safety"; it would re-add the rigidity v2 was created to remove.
+- **Open data layer.** A site is data + pages. New data origins are added by writing one Source Adapter under `.xiaoyi-ssg/sources/<type>.js` and registering the `type` in `schemas/source.schema.json`. The engine main loop is not modified. Do not encode site shapes ("blog mode", "shop mode") into the engine; describe them as manifest combinations.
+- **Source-type agnostic engine.** `loadSources` dispatches on `source.type`. `expandViews` is driven by `for.each` / `for.paginate` / `use` / single-page — no source name is hardcoded. The engine throws on unknown source `type` (naming the missing adapter file) and on unknown `for.*` source reference. Do not add silent fallbacks to markdown for unknown types.
+- **Build-time fetch only.** The browser never talks to an authed API. All fetches happen in `render.js`. Adapters use Node 18 built-in `fetch` with `AbortSignal.timeout`. No CDN-only deps for fetches.
+- **Secrets come from `process.env` only.** The manifest stores only the env var **name** (`source.auth.env`); the value never appears in `public/`, `assets/data/`, the snapshot cache (`.xiaoyi-ssg/.cache/sources/`), `pipeline-manifest.json`, logs, or error messages. The `assertNoSecretsInOutput` self-test runs after every build and exits non-zero on any leak. Snapshot writers must scrub values equal to known resolved secrets before writing.
+- **Snapshot cache is `.gitignore`-d.** `.xiaoyi-ssg/.cache/` MUST be in the generated project's `.gitignore`. Snapshot JSON files may contain large or sensitive source payloads; they are a build artifact, not source.
+- **Dev does not hammer APIs.** `dev.js` must respect each remote source's `cache.ttl` and not re-fetch on every keystroke. To force a re-fetch in dev, the user runs `npm run build:fresh` (which calls `render.js --fresh`); this is the only path that ignores snapshots within TTL.
+- **`fallback` is mandatory and deliberate.** Every remote source must declare a `fallback` (`cache` / `empty` / `fail`); default in code is `cache` for resilience, but the AI is expected to ask the user and pick `fail` for load-bearing sources.
+
 ---
 
 ## Path Conventions
@@ -140,17 +154,19 @@ See [`SKILL.md` § Required Dependencies](./SKILL.md).
 
 | File | Responsibility | Modification trigger |
 |------|----------------|----------------------|
-| `SKILL.md` | Skill definition, frontmatter, workflow, interaction contract | Interaction flow / capability change |
-| `AGENTS.md` | This file: AI collaboration conventions for development | Development convention change |
-| `prompts/pipeline-generation.md` | Guide AI in generating the full rendering pipeline | Pipeline structure / template strategy / CSS generation strategy change |
-| `prompts/content-type-definition.md` | Guide AI in defining content types with the user | Content type flow / field types change |
+| `SKILL.md` | Skill definition, frontmatter, workflow, interaction contract, v2 engine summary, security hard rules | Interaction flow / capability / model change |
+| `AGENTS.md` | This file: AI collaboration conventions for development (v2 invariants, orchestration logic) | Development convention / model / orchestration change |
+| `prompts/pipeline-generation.md` | Guide AI in generating the full rendering pipeline (sources/ dir, security self-test) | Pipeline structure / template strategy / CSS strategy change |
+| `prompts/data-sources.md` | v2 Source Adapter contract: kinds (markdown / http / json / csv / rss / inline / derived), security, cache, fallback | New adapter kind / security rule / cache strategy change |
+| `prompts/content-type-definition.md` | Guide AI in defining markdown front-matter schemas with the user | Markdown content type flow / field types change |
 | `prompts/design-system-extraction.md` | Guide AI in normalizing `frontend-design` content into xiaoyi tokens | Token schema / normalization strategy change |
-| `prompts/render-node-spec.md` | Full spec of the rendering script (Node.js) | Renderer structure / algorithm change |
-| `prompts/template-manifest-generation.md` | Guide AI in generating `template-manifest.json` | Manifest structure / pattern examples change |
+| `prompts/render-node-spec.md` | v2 engine spec: `loadSources` + `expandViews`, hash cache, port auto-increment | Renderer structure / algorithm change |
+| `prompts/template-manifest-generation.md` | Guide AI in generating `template-manifest.json` v2 (sources + views) | Manifest structure / pattern examples change |
 | `templates/conventions.md` | Eta template syntax, variable binding, custom fields mandatory rules | Template engine constraint change |
 | `schemas/design-tokens.json` | design-tokens JSON Schema (for validation) | Token field add/remove |
 | `schemas/config.schema.json` | config.yml validation schema | Site config field add/remove |
-| `schemas/template-manifest.json` | template-manifest validation schema | Manifest structure change |
+| `schemas/template-manifest.json` | v2 manifest JSON Schema (sources + views) | Manifest structure change |
+| `schemas/source.schema.json` | Source Adapter definition JSON Schema | New adapter kind / source field change |
 
 > Note: `references/frontend-design-integration.md` was merged into `SKILL.md` § Design System Delegation and then deleted.
 
@@ -189,8 +205,9 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
      C (unknown / not a static site) per the takeover spec
    - RUN_BUILD: "build/generate/publish/preview" with pipeline present
    - RUN_DEV: "dev/realtime/watch" with pipeline present
-   - REGENERATE_PIPELINE: "switch style/adjust layout/change color/theme/add content type/change content type"
-   - DEFINE_CONTENT_TYPE: "add a XX type/new content type"
+   - REGENERATE_PIPELINE: "switch style/adjust layout/change color/theme/add content type/add data source/change data source"
+   - DEFINE_CONTENT_TYPE: "add a markdown XX type/new content type" (front-matter schema)
+   - ADD_DATA_SOURCE: "pull from this API / aggregate this RSS / group by tag / fetch this JSON / fetch this CSV" (v2 source kinds)
    - ANALYZE_REFERENCE: "reference this site/like xxx.com"
    - CONTENT_EDIT: "change title/add tag/change date/edit body" → locate file and edit
    - PREVIEW: "preview/show effect/local server"
@@ -209,7 +226,11 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 | "build/generate the site" / "build" | RUN_BUILD | Pipeline must exist |
 | "dev mode" / "realtime preview" / "watch" / "dev" | RUN_DEV | Pipeline must exist |
 | "switch to a cleaner style" / "darken the theme" | REGENERATE_PIPELINE | Current tokens + pipeline-manifest |
-| "add a 'project' type with cover, tech stack, links" | DEFINE_CONTENT_TYPE | Current content-types |
+| "add a 'project' type with cover, tech stack, links" | DEFINE_CONTENT_TYPE | Current content-types + manifest v2 markdown source |
+| "pull products from https://api.shop.example.com, with token PRODUCTS_API_TOKEN" | ADD_DATA_SOURCE (http) | URL, auth.env, JSONPath select, field map, fallback |
+| "aggregate posts by tag into /tag/{slug}/ pages" | ADD_DATA_SOURCE (derived groupBy) + REGENERATE_PIPELINE | Current markdown source; which field to group by |
+| "import https://example.com/changelog.json as a news page" | ADD_DATA_SOURCE (json or http) | URL or file path, JSONPath select |
+| "fetch my GitHub repos into a projects page" | ADD_DATA_SOURCE (http) | URL, optional auth.env, field map |
 | "change this article's title to..." | CONTENT_EDIT | Need to locate file |
 | "preview it" | PREVIEW | After build or directly via dev |
 | "check if there is any problem" | DIAGNOSE | Scan logic |
@@ -227,35 +248,38 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 1. Pre-flight loads frontend-design (already done above).
 2. Discover requirements through dialogue:
    - "What kind of site do you want? Any reference links / screenshots / text description?"
-   - User provides: reference URL, or text description (e.g., "minimalist tech blog", "portfolio", "documentation site")
+   - User provides: reference URL, or text description (e.g., "minimalist tech blog", "portfolio", "documentation site", "API-backed shop")
 3. Reference site analysis (if a URL is given):
    - WebFetch the page HTML
    - Per prompts/reference-analysis.md extract: color, typography, spacing, layout, components, interactions
    - Output structured design intent: design-intent.json
-4. Clarify the content model:
-   - "What content types do you need? For example: articles, projects, videos, galleries, pages..."
-   - For each type, ask about fields: required / optional, media fields, relationship fields
-   - Per prompts/content-type-definition.md generate content-types.json
+4. Clarify the data model (v2: data ORIGIN first, not content type):
+   - "Where does the data live? Local markdown files? An API? A JSON/CSV file? An RSS feed? Or derived from another source?"
+   - For EACH data origin, ask which fields are needed and how they map to the standard item shape.
+   - For local markdown sources, per prompts/content-type-definition.md generate content-types.json (front-matter schema only; render.js does not read this for rendering, only for AI authoring guidance).
+   - For API sources, ask: which env var holds the secret (record name only in auth.env)? What JSONPath selects the array? What `map` renames fields? What's the `fallback` policy?
 5. Determine site structure:
-   - Nav order, homepage layout, list / detail page structure
-   - Generate config.yml (site basics, pages order, per_page, etc.)
+   - Which sources get per-item pages (for.each), which get lists (for.paginate), which aggregate on the home (use).
+   - Nav order, homepage layout, list / detail page structure.
+   - Generate config.yml (site basics, pages order, geo block, dev block).
 6. Generate the design system:
    - Read prompts/design-system-extraction.md
    - Extract tokens from frontend-design, normalize into .xiaoyi-ssg-design-tokens.json
    - Required fields: source_skill (="frontend-design"), color, typography, layout, component, motion, seed
 7. Generate the rendering pipeline:
-   - Read prompts/pipeline-generation.md and prompts/render-node-spec.md
-   - Inputs: tokens + content-types + config + component requirements
-   - Generate all <PIPELINE_DIR>/ files in one pass
+   - Read prompts/pipeline-generation.md, prompts/render-node-spec.md, prompts/data-sources.md
+   - Inputs: tokens + content-types + config + sources/views manifest + interactions
+   - Generate all <PIPELINE_DIR>/ files in one pass, including the .xiaoyi-ssg/sources/ adapter directory and the manifest v2
 8. Persist files:
    - config.yml
    - .xiaoyi-ssg-design-tokens.json
-   - .xiaoyi-ssg/content-types.json
-   - source/ directory structure (create missing _<type>/ per content-types; create source/_media/; do not overwrite existing files)
-   - <PIPELINE_DIR>/ (render.js, dev.js, package.json, templates/, assets/, config.schema.json, pipeline-manifest.json)
-   - .gitignore (ignore public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/)
-   - **README.md at <SITE_ROOT>**: brief, in the inferred site language, explaining directory layout, how to add content, and how to run build / dev. Required even when no user-authored content exists yet.
-   - **One demo `*.md` per content type** in each `source/_<type>/` directory (only if empty) so the site has at least one renderable item per type. Each demo file MUST include a valid frontmatter matching the content-type schema and at least three short paragraphs of body content.
+   - .xiaoyi-ssg/content-types.json (markdown front-matter schema; only present when the site uses markdown sources)
+   - .xiaoyi-ssg/template-manifest.json (v2: sources + views)
+   - source/ directory structure (create missing _<type>/ per markdown sources; create source/_media/; do not overwrite existing files)
+   - <PIPELINE_DIR>/ (render.js, dev.js, package.json, sources/, templates/, assets/, config.schema.json, pipeline-manifest.json)
+   - .gitignore (ignore public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/, .xiaoyi-ssg/.cache/)
+   - **README.md at <SITE_ROOT>**: brief, in the inferred site language, explaining directory layout, how to add content, how to run build / dev, and which env vars to set for API sources.
+   - **One demo `*.md` per markdown content type** in each `source/_<type>/` directory (only if empty) so the site has at least one renderable item per type. Each demo file MUST include a valid frontmatter matching the content-type schema and at least three short paragraphs of body content.
 9. Install dependencies and first build:
    - Run `npm install` in <PIPELINE_DIR>/
    - Run first build: `cd .xiaoyi-ssg && npm run build`
@@ -263,6 +287,7 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 10. Suggest next steps:
     - Realtime dev: `cd .xiaoyi-ssg && npm run dev`
     - Add content: `/xiaoyi-ssg` → "add a new article..."
+    - Force re-fetch remote sources: `cd .xiaoyi-ssg && npm run build:fresh`
     - Deploy: `cd .xiaoyi-ssg && npm run build` → deploy public/
 ```
 
@@ -274,19 +299,20 @@ Prerequisite: <PIPELINE_DIR>/render.js must exist
 Run: node .xiaoyi-ssg/render.js [--fresh]
 
 Render script logic (Node.js ESM, see prompts/render-node-spec.md for details):
-1. Read config.yml + .xiaoyi-ssg-design-tokens.json + content-types.json
-2. Scan source/ and parse front-matter per content-type (validate required fields)
-3. Read .xiaoyi-ssg-cache.json
-4. Compute global data: nav array, pagination plan, prev/next mapping
-5. For each output path, compute input hash: content file + template files used + tokens + config key fields + interactions manifest + assets
+1. Read config.yml + .xiaoyi-ssg-design-tokens.json + content-types.json + template-manifest.json (v2)
+2. loadSources(): dispatch to Source Adapters (markdown / http / json / csv / rss / inline / derived) in topological order. Output: datasets.
+3. Read .xiaoyi-ssg-cache.json (build cache) and .xiaoyi-ssg/.cache/sources/*.json (source snapshots)
+4. expandViews(): expand views (for.each / for.paginate / use / single) into concrete render tasks. Source-type agnostic.
+5. For each output path, compute input hash: source items (or source file for markdown) + template files used + tokens + config key fields + interactions manifest + assets
 6. Incremental decision: hash unchanged and not --fresh → reuse public/ existing file; otherwise re-render
-7. Generate interaction data: search index, filter facets, gallery/chart data as static JSON or data attributes
+7. Generate interaction data: search index, filter facets, gallery/chart data as static JSON or data attributes (data flows from any source via datasets, not just markdown)
 8. Render: templates must support HTML escaping, raw HTML, conditionals, loops, safe attribute output, and data-* interaction hooks
 9. Write public/<path>/index.html
 10. Copy assets/ → public/assets/
-11. Generate feeds (RSS/JSON), sitemap.xml, 404.html
-12. Update .xiaoyi-ssg-cache.json
-13. Print summary: file count, enabled interactions, duration, cache hit rate, warnings
+11. Generate feeds (RSS/JSON), sitemap.xml, 404.html, GEO outputs
+12. assertNoSecretsInOutput(): grep public/ for resolved auth.env values; fail non-zero on any leak
+13. Update .xiaoyi-ssg-cache.json
+14. Print summary: file count, enabled interactions, duration, cache hit rate, warnings (including any remote fetch that fell back)
 ```
 
 #### RUN_DEV (Realtime Dev Mode)
@@ -299,13 +325,18 @@ Run: node .xiaoyi-ssg/dev.js [--port 3000]
 Dev server logic (see prompts/render-node-spec.md):
 1. Start an HTTP server (default port 3000, auto-increment on conflict) serving public/
 2. Start chokidar watching:
-   - source/**/*.md (content change)
+   - source/**/*.md (markdown content change)
    - .xiaoyi-ssg/templates/** (template change)
+   - .xiaoyi-ssg/assets/** (asset change)
+   - .xiaoyi-ssg/sources/** (adapter change)
+   - .xiaoyi-ssg/template-manifest.json (manifest change)
+   - .xiaoyi-ssg/content-types.json (front-matter schema change)
+   - .xiaoyi-ssg/interactions.manifest.json (interaction change)
    - .xiaoyi-ssg-design-tokens.json (design change)
    - config.yml (config change)
    - source/_media/** (media change)
 3. On change:
-   a. Run incremental build (reusing render.js logic)
+   a. Run incremental build (reusing render.js logic). Remote sources are NOT re-fetched on every keystroke; each source's snapshot + cache.ttl is respected. To force a re-fetch, the user runs npm run build:fresh.
    b. Push a reload event through SSE
 4. HTTP response interception: inject an SSE client script before HTML </body>
 5. Console output: changed file, rebuilt pages, duration, access URL
@@ -352,7 +383,30 @@ Trigger: theme/layout/color adjustment, content type add/remove/edit
    - Custom: any key-value
 3. Generate / update content-types.json (with JSON Schema-compatible field definitions)
 4. Create source/_<type>/ directory only if it does not already exist; do not modify existing content
-5. Trigger REGENERATE_PIPELINE (regenerate the matching list/detail templates)
+5. Trigger REGENERATE_PIPELINE: add the matching markdown `source` entry to template-manifest.json and the corresponding `view` entries; regenerate templates.
+```
+
+#### ADD_DATA_SOURCE (Add/Modify a Data Source)
+
+This is the v2 intent for API-backed apps, RSS aggregation, JSON/CSV data, or computed (derived) sources. It is parallel to DEFINE_CONTENT_TYPE but covers the long-tail the v1 model could not express.
+
+```
+1. Confirm the source kind: http / json / csv / rss / inline / derived. If none fit, propose writing a new Source Adapter under .xiaoyi-ssg/sources/<type>.js + registering the type in schemas/source.schema.json; this is a normal extension path.
+2. Ask for the source-level fields (per prompts/data-sources.md and schemas/source.schema.json):
+   - http: url, method, headers, auth (env var NAME only — never a value), select (JSONPath-lite), map, defaults, cache.ttl, fallback, timeout
+   - json/csv: file or url, select, map, defaults, cache, fallback, timeout
+   - rss: url, map, cache, fallback, timeout
+   - inline: items
+   - derived: from (source name), op (groupBy / filter / map / flatten / unique / count), field, where
+3. Ask which views consume it:
+   - per-item pages (for.each) — what URL pattern and which template?
+   - paginated list (for.paginate) — perPage and URL pattern?
+   - aggregated on the home (use: [...]) — alongside which other sources?
+   - taxonomy pages over a derived groupBy source — for.each with output like `/tag/{field}/`
+4. If auth.env is set: confirm the user knows which env var to set in their build environment. NEVER write the value into the manifest, README, or pipeline-manifest.json; record only the name.
+5. Update template-manifest.json v2: add the source entry and the matching view entries. Do NOT introduce a v1-style collections entry; v2 is source+views only.
+6. Trigger REGENERATE_PIPELINE: regenerate render.js (or confirm the existing engine already supports the adapter), templates, interaction data, and CSS if needed.
+7. After the user runs npm run build:fresh, run the mandatory self-test including assertNoSecretsInOutput.
 ```
 
 #### CONTENT_EDIT (Edit Content)
@@ -556,9 +610,8 @@ In all sub-flows:
 
 **Field types**: `string`, `datetime`, `date`, `boolean`, `string[]`, `url`, `number`, `object`.
 
-> Template selection is declared by `template-manifest.json` `templates[]`.  
-> Pagination is declared by `manifest.collections[].pagination`.  
-> Singleton pages are expressed by `manifest.collections[].singleton: true`.
+> **v2 alignment.** `content-types.json` describes the **front-matter schema** for markdown sources (authoring guidance and optional validation). It does NOT drive rendering. Page shape and pagination are declared in `template-manifest.json` v2: per-item pages via `views[].for.each`, paginated lists via `views[].for.paginate`, singleton pages via a `markdown` source that yields one item (no special flag is required — use a single-source `for.each` view or a single-page view with `use: [...]`).
+> The JSON keys `types.<name>.dir` correspond to markdown `sources.<name>.dir` in `template-manifest.json`; both files are kept in sync by the pipeline-generation flow.
 
 ---
 
@@ -776,7 +829,7 @@ const eta = new Eta({
 
 const fresh = process.argv.includes('--fresh');
 
-// Main flow: loadManifest → scanCollections → expandTemplates → render tasks → copyAssets → syncTokensToCSS → generateExtras → saveCache → printSummary
+// Main flow: loadManifest → loadSources (dispatch by type) → expandViews → render tasks → copyAssets → generateExtras → GEO → assertNoSecretsInOutput → saveCache → printSummary
 ```
 
 ### dev.js core
@@ -862,7 +915,7 @@ Standard content item fields:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "outputs": {
     "/blog/hello-world/": {
       "hash": "sha256:...",
@@ -880,10 +933,11 @@ Standard content item fields:
 
 **Algorithm**:
 
-- For each output path, compute an input hash: content file + template files used + tokens + config key fields + **template-manifest.json** + interactions manifest + interaction modules + data files + style/script + tokens (for syncTokensToCSS) → SHA256 (`crypto.createHash`).
+- For each output path, compute an input hash: source items (file for markdown, JSON for API/derived) + template files used + tokens + config key fields + **template-manifest.json** + interactions manifest + interaction modules + data files + style/script + tokens (for syncTokensToCSS) → SHA256 (`crypto.createHash`).
 - If the hash matches cache and is not `--fresh` → **skip render**, reuse the existing `public/` file.
-- `--fresh`: ignore cache, force re-render of all pages.
-- Implicit per-page build: only process outputs related to changed content; the rest is reused.
+- `--fresh`: ignore cache, force re-render of all pages. Also forces remote sources to ignore their snapshot TTL and re-fetch.
+- Implicit per-page build: only process outputs related to changed sources/items; the rest is reused.
+- Remote source snapshots live separately at `.xiaoyi-ssg/.cache/sources/<key>.json` (git-ignored). The build cache key for API/derived pages participates the snapshot contents directly; a refresh of the snapshot invalidates the page hash.
 
 ---
 
@@ -891,15 +945,20 @@ Standard content item fields:
 
 After any logic change, verify at least:
 
-1. **New site**: `/xiaoyi-ssg` → dialogue → generate config.yml + content-types + tokens + pipeline + source/ + npm install + first build.
-2. **Run build**: `node .xiaoyi-ssg/render.js` → public/ complete site (HTML, CSS, JS, feed, sitemap, 404).
-3. **Reproducible**: two consecutive `render.js` runs → outputs byte-identical (except timestamp fields).
+1. **New site**: `/xiaoyi-ssg` → dialogue → generate config.yml + content-types + tokens + sources/views manifest + pipeline + source/ + npm install + first build.
+2. **Run build**: `node .xiaoyi-ssg/render.js` → public/ complete site (HTML, CSS, JS, feed, sitemap, 404, GEO).
+3. **Reproducible**: two consecutive `render.js` runs (with remote sources either pinned by TTL or unchanged) → outputs byte-identical (except timestamp fields).
 4. **Cache invalidation**: modify one content file → re-run `render.js` → only the related pages rebuild; others are reused.
-5. **Force refresh**: `render.js --fresh` → all pages re-render.
-6. **Realtime dev**: `cd .xiaoyi-ssg && npm run dev` → modify md → browser auto-refresh.
+5. **Force refresh**: `render.js --fresh` → all pages re-render; remote sources ignore TTL and re-fetch.
+6. **Realtime dev**: `cd .xiaoyi-ssg && npm run dev` → modify md → browser auto-refresh. Modify a markdown source file → only the related pages rebuild; verify the remote sources are NOT re-fetched on every keystroke.
 7. **Style adjustment**: `/xiaoyi-ssg` → "adjust color/layout" → update tokens → regenerate pipeline → `render.js --fresh` → takes effect.
-8. **Content type add/remove**: `/xiaoyi-ssg` → "add a 'project' type" → define fields → regenerate pipeline → available.
-9. **Reference site analysis**: give URL → AI extracts design intent → fused into tokens.
+8. **Markdown content type add/remove**: `/xiaoyi-ssg` → "add a 'project' type" → define fields → update content-types.json + corresponding markdown `source` + `view` in manifest → regenerate pipeline → available.
+9. **API data source add**: `/xiaoyi-ssg` → "pull products from https://api.shop.example.com, with PRODUCTS_API_TOKEN" → AI adds `source.type=http` with `auth.env=PRODUCTS_API_TOKEN` + matching `for.each` view → regenerate pipeline → set `PRODUCTS_API_TOKEN` env var → `render.js --fresh` → products pages appear; `grep -r "<token-value>" public/` returns nothing.
+10. **Derived source (taxonomy)**: `/xiaoyi-ssg` → "aggregate posts by tag into /tag/{slug}/ pages" → AI adds `derived:groupBy tags` source + `for.each` view with `output: /tag/{field}/` → regenerate → one page per tag renders.
+11. **Multi-source home**: `/xiaoyi-ssg` → "show recent posts and latest products on the home" → home view declares `use: ["posts", "products"]` → template iterates both → home renders both.
+12. **Auth failure handling**: configure a source with a fake `auth.env` and unset env var → build must follow `fallback` (no `Bearer undefined` header, no crash) → check log + `public/` for absence of leaked token.
+13. **Secret leak check**: `assertNoSecretsInOutput` runs as part of the mandatory self-test after every build. Force a leak (write a snapshot containing the secret) and verify the build fails non-zero.
+14. **Reference site analysis**: give URL → AI extracts design intent → fused into tokens.
 
 ---
 

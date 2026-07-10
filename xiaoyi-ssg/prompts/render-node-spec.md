@@ -1,303 +1,313 @@
-# render.js / dev.js Spec (Template-Manifest-Driven)
+# render.js / dev.js Spec (v2 — Source + View Engine)
 
-This document defines the full spec of the Node.js scripts the AI should produce when generating the rendering pipeline. The AI writes code per this spec into the user project's `.xiaoyi-ssg/`.
+This document defines the full spec of the Node.js scripts the AI produces for the rendering pipeline. The AI writes code per this spec into the user project's `.xiaoyi-ssg/`.
+
+> **v2 engine model.** The engine knows nothing about blogs, docs, or landing pages. It knows only two open abstractions:
+> - **`sources`** — where data comes from (local markdown, build-time API fetch, JSON/CSV files, RSS, inline, or derived). Resolved by pluggable **Source Adapters** (see [`data-sources.md`](./data-sources.md)).
+> - **`views`** — how pages are generated (per-item, paginated, multi-source aggregate, or single computed page).
+>
+> There is no `collections`, no `forEach` enum, no hardcoded list/detail/tree branch. Any site shape — including API-backed apps and aggregation pages — is just a combination of sources and views. This is what removes the v1 "rigidity".
 
 ---
 
 ## Technical Constraints
 
-- **Node.js 18+** (LTS, built-in `fetch`, `fs.cpSync`)
-- **ESM module system** (`"type": "module"`, use `import`/`export`)
-- **Path derivation**: `render.js` and `dev.js` must derive `PIPELINE_DIR` from `import.meta.url`, then derive `SITE_ROOT` as `dirname(PIPELINE_DIR)`. Do not use `process.cwd()` as the site root.
-- Dependencies: `js-yaml` (YAML parsing), `marked` (Markdown → HTML), `chokidar` (file watching, dev.js only), `eta` (template engine).
-- Template engine: use `eta` (~2KB, ESM, supports HTML escaping, raw HTML, conditionals, loops, async, custom filters).
+- **Node.js 18+** (LTS, built-in `fetch`, `AbortSignal.timeout`, `fs.cpSync`).
+- **ESM module system** (`"type": "module"`, `import`/`export`).
+- **Path derivation**: derive `PIPELINE_DIR` from `import.meta.url`, then `SITE_ROOT = dirname(PIPELINE_DIR)`. Never use `process.cwd()` as the site root.
+- Dependencies: `js-yaml`, `marked`, `chokidar` (dev only), `eta`. Pin and record any extra package in `interactions.manifest.json`.
+- Template engine: `eta` (HTML escaping, raw HTML, conditionals, loops, async, filters).
 - Two separate files: `render.js` (build) and `dev.js` (dev).
-- Allowed to generate `assets/script.js`, `assets/interactions/*.js`, `assets/data/*.json` to implement static-host-compatible browser interactions. Interactions must not depend on the dev server to work.
+- Adapters live under `.xiaoyi-ssg/sources/`; the engine dispatches on `source.type`.
+- Build-time fetch only. The engine never emits code that talks to an authed API from the browser.
 
 ---
 
 ## Site Language Contract
 
-- The generated renderer must treat `config.site.language` as the authoritative BCP 47 language tag for the site.
-- The init/new-site workflow must set `config.site.language` from the user's request language unless the user explicitly specifies another language.
-- Templates must use `<html lang="<%= site.language || inferredFallback %>">`; the fallback must be the inferred site language from generation time, not a hard-coded English default.
-- All user-facing strings produced by templates, generated JavaScript, generated feeds, 404 pages, pagination, search/filter UI, comments UI, aria labels, placeholders, and empty states must be localized to the site language.
-- Internal identifiers may remain ASCII/English, but visible text such as "Home", "Search", "Tags", "Comments", "Loading", "No results", "Previous", "Next", and "Page Not Found" must be translated when the site language is not English.
-- Generated search indexes may include any content language, but UI labels and result status messages must match `config.site.language`.
-- When rendering existing user-authored Markdown, preserve the original content language; do not translate user content unless explicitly requested.
+- `config.site.language` is the authoritative BCP 47 tag; init sets it from the user's request language unless overridden.
+- Templates use `<html lang="<%= site.language || inferredFallback %>">`; the fallback is the inferred site language, not a hardcoded English default.
+- All template-, JS-, feed-, 404-, pagination-, search/filter-, aria-facing strings localize to the site language. Identifiers may stay ASCII.
+- Preserve the original language of user-authored markdown; do not translate content unless asked.
 
 ---
 
-## Core Data Structure: template-manifest.json
+## Core Data Structures
 
-The single source of truth for the rendering pipeline. When the AI generates the pipeline, it must produce a manifest that conforms to `schemas/template-manifest.json` based on the user's content model and site structure intent.
+### `template-manifest.json` (single source of truth)
 
-### Manifest Structure Overview
+Conforms to `schemas/template-manifest.json` (v2). Two top-level arrays/objects:
 
 ```json
 {
-  "version": 1,
-  "collections": {
-    "posts": {
-      "source": "source/_posts",
-      "sort": { "field": "date", "order": "desc" },
-      "pagination": { "perPage": 10, "path": "/blog/page/{n}/" }
-    },
-    "landing": { "source": "source/_landing", "singleton": true },
-    "docs": { "source": "source/_docs", "sort": { "field": "nav_order" }, "tree": true }
+  "version": 2,
+  "sources": {
+    "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
+    "products": { "type": "http", "url": "https://api.example.com/products",
+                  "auth": { "env": "PRODUCTS_API_TOKEN", "prefix": "Bearer " },
+                  "select": "$.data.items", "map": { "slug": "id", "title": "name" },
+                  "cache": { "key": "products", "ttl": 3600 }, "fallback": "cache" },
+    "tags":     { "type": "derived", "from": "posts", "op": "groupBy", "field": "tags" }
   },
-  "templates": [
-    { "name": "base", "type": "layout", "file": "base.html" },
-    { "name": "index", "type": "page", "layout": "base", "file": "index.html", "output": "/", "data": {} },
-    { "name": "list", "type": "page", "layout": "base", "file": "list.html", "output": "{collection.pagination.path}", "forEach": "collections" },
-    { "name": "detail", "type": "page", "layout": "base", "file": "detail.html", "output": "/{collection}/{slug}/", "forEach": "items" },
-    { "name": "404", "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
+  "views": [
+    { "name": "base",    "type": "layout", "file": "base.html" },
+    { "name": "home",    "type": "page", "layout": "base", "file": "home.html", "output": "/", "use": ["posts", "products"] },
+    { "name": "post",    "type": "page", "layout": "base", "file": "detail.html", "output": "/blog/{slug}/", "for": { "each": "posts" } },
+    { "name": "blog",    "type": "page", "layout": "base", "file": "list.html", "output": "/blog/page/{n}/", "for": { "paginate": "posts", "perPage": 10 } },
+    { "name": "product", "type": "page", "layout": "base", "file": "product.html", "output": "/shop/{slug}/", "for": { "each": "products" } },
+    { "name": "tag",     "type": "page", "layout": "base", "file": "tag.html", "output": "/tag/{slug}/", "for": { "each": "tags" } },
+    { "name": "404",     "type": "page", "layout": "base", "file": "404.html", "output": "/404/" }
   ]
 }
 ```
 
-### Key Field Definitions
+### View field semantics
 
-| Field | Description |
-|-------|-------------|
-| `collections` | Content collection definitions, key = collection name, value = source path, sort, pagination, singleton, tree, etc. |
-| `templates[]` | Array of template definitions |
-| `templates[].type` | `"layout"` (layout template, contains `<%~ body %>` slot) or `"page"` (renders an output page) |
-| `templates[].forEach` | Expansion strategy: `"collections"` (one per collection), `"items"` (one per content item), `"pagination"` (one per page), omitted = single expansion |
-| `templates[].output` | Output path template, supports placeholders: `{collection}`, `{slug}`, `{n}` (page number), `{lang}`, `{date:YYYY}`, etc. |
-| `templates[].lang` | Optional, language code array; injects `{lang}` placeholder during expansion |
-| `collections[].pagination` | Pagination config when enabled: `perPage`, `path` (contains `{n}` placeholder) |
-| `collections[].singleton` | Render only the first item as a single page (for landing, about, singleton content) |
-| `collections[].tree` | Build tree structure (used for docs site sidebar navigation) |
+| Field | Meaning |
+|-------|---------|
+| `type` | `"layout"` (wrapper with `<%~ body %>`) or `"page"` (emits output). |
+| `for.each` | Source name → one page per item; binds `item`, `source`. |
+| `for.paginate` + `for.perPage` | Source name → one page per pagination slice; binds `items`, `pagination`, `page`. |
+| `for.where` | Optional pre-expansion filter (field/value; array = any-match). |
+| `for` omitted | Single page (home, 404, computed). |
+| `use` | Source names whose full datasets inject as top-level vars (multi-source aggregation). Independent of `for`. |
+| `output` | Path template; placeholders `{slug}`, `{n}`, `{lang}`, `{source}`, `{field}`, `{date:FMT}`. |
+| `lang` | Expand once per language code. |
 
 ---
 
 ## render.js — Core Render Script
 
-> ⚠️ **Mandatory**: before generating `render.js`, the AI must first read [`templates/conventions.md`](../templates/conventions.md). It defines the Eta syntax, variable binding, and custom field flattening rules. Non-compliance produces pipelines that look correct but render empty pages.
+> ⚠️ **Mandatory pre-read**: [`templates/conventions.md`](../templates/conventions.md) (Eta syntax, variable binding, field flattening) and [`data-sources.md`](./data-sources.md) (adapter contract, security). Non-compliance produces pipelines that look correct but render empty or leak secrets.
 
 ### Overall Flow
 
 ```javascript
-async function build(fresh = false) {
-  // 1. Load manifest + validate
-  const manifest = loadManifest();
-  validateManifest(manifest);
+export async function build(fresh = false) {
+  const manifest      = loadManifest();          // validate against schema v2
+  const config        = loadConfig();
+  const tokens        = loadTokens();
+  const contentTypes  = loadContentTypes();       // still used to validate markdown front-matter
+  const interactions  = loadInteractionsManifest();
+  const cache         = loadCache();
 
-  // 2. Load config, tokens, content-types, interactions
-  const config = loadConfig();
-  const tokens = loadTokens();
-  const contentTypes = loadContentTypes();
-  const interactions = loadInteractionsManifest();
-  const cache = loadCache();
-
-  // 3. Validate config
   validateConfig(config);
-  validateContentTypes(contentTypes);
 
-  // 4. Scan content → collections data
-  const collections = scanCollections(manifest, contentTypes);
+  // 1. Resolve every source (topological: derived after its `from`)
+  const datasets = await loadSources(manifest.sources, buildCtx(config));
+  //    datasets = { [sourceName]: Item[] }  — markdown, http, derived, ... all uniform
 
-  // 5. Global data
-  const nav = buildNav(config, contentTypes);
-  const globals = { site: config.site, nav, tokens, build_time: new Date().toISOString() };
+  // 2. Global data
+  const nav = buildNav(config, manifest, datasets);
+  const globals = { site: config.site, nav, tokens, build_time: new Date().toISOString(), ...recentGlobals(datasets, manifest) };
 
-  // 6. Initialize Eta
   const eta = initEta();
 
-  // 7. Expand template tasks
-  const tasks = expandTemplates(manifest, collections);
+  // 3. Expand views into concrete tasks (source-type agnostic)
+  const tasks = expandViews(manifest.views, datasets, config);
 
-  // 8. Render each task (incremental cache)
+  // 4. Fill item.url now that we know each item's owning view/output
+  assignItemUrls(tasks, datasets);
+
+  // 5. Render each task with incremental cache
   for (const task of tasks) {
-    const hash = computeTaskHash(task, tokens, config, interactions);
+    const hash = computeTaskHash(task, tokens, config, interactions, datasets);
     if (!fresh && cacheHit(task.output, hash)) continue;
-
     const data = { ...globals, ...task.data };
-    const html = renderWithLayout(eta, task.layout, task.file, data);
+    const html = await renderWithLayout(eta, task.layout, task.file, data);
     writeOutput(task.output, html);
     updateCache(task.output, hash);
   }
 
-  // 9. Copy assets, generate interaction data, feed, sitemap, 404
+  // 6. Assets, interaction data, feeds, sitemap, 404, GEO
   copyAssets();
-  writeExtras(buildExtras(config, collections, interactions));
-  generateFeeds(collections, config);
+  writeExtras(buildExtras(config, datasets, interactions));
+  generateFeeds(datasets, config, manifest);
   generateSitemap(tasks, config);
   generate404(config, tokens, eta, nav);
+  generateGeo(datasets, tasks, config, contentTypes);   // see GEO section
 
-  // 10. Save cache, print summary
+  // 7. Security self-check, save cache, summary
+  assertNoSecretsInOutput(manifest.sources);            // MANDATORY
   saveCache(cache);
-  printSummary(outputs);
+  printSummary(tasks, datasets);
 }
 ```
 
-### Key Function Specs
+### `loadSources(sources, ctx)`
 
-#### `loadManifest()`
-- Read `.xiaoyi-ssg/template-manifest.json`
-- Validate per `schemas/template-manifest.json`
-- On failure, `process.exit(1)`
+```javascript
+import * as markdown from './sources/markdown.js';
+import * as http from './sources/http.js';
+import * as jsonSrc from './sources/json.js';
+import * as csvSrc from './sources/csv.js';
+import * as rss from './sources/rss.js';
+import * as inlineSrc from './sources/inline.js';
+import * as derived from './sources/derived.js';
 
-#### `scanCollections(manifest, contentTypes)`
-- Iterate over `manifest.collections`, read each `source` directory's `.md` files
-- Parse front-matter, validate required fields (see `contentTypes.types[collectionName].fields`)
-  - **Compatibility**: `content-types.json` schema may use the `types` or `collections` key (render.js reads `types` first, falls back to `collections`)
-- Generate standardized item objects:
-  ```js
-  { collection, slug, title, date, dateDisplay, tags, categories, cover, excerpt, bodyHtml, draft, navOrder, parent, customFields,
-    // custom fields flattened to top level (templates use item.year instead of item.customFields.year)
-    ...data
+const ADAPTERS = { markdown, http, json: jsonSrc, csv: csvSrc, rss, inline: inlineSrc, derived };
+
+async function loadSources(sources, ctx) {
+  const order = topoSortByDerivedFrom(sources);   // derived sources after their `from`
+  const datasets = {};
+  for (const name of order) {
+    const def = sources[name];
+    const adapter = ADAPTERS[def.type];
+    if (!adapter) throw new Error(`Unknown source type "${def.type}" for source "${name}". Add .xiaoyi-ssg/sources/${def.type}.js.`);
+    let items = await adapter.load(def, { ...ctx, name, datasets });
+    items = items.map(it => normalizeItem(it, def, name));   // map + defaults + flatten
+    if (def.sort) items = sortItems(items, def.sort);
+    const dataset = def.tree ? { items, tree: buildTree(items) } : { items };
+    datasets[name] = items;                                   // items array is the primary handle
+    datasets[name].meta = dataset;                            // sidecar: tree, etc.
   }
-  ```
-- Sort by `sort.field` / `sort.order`
-- Pre-compute `pagination` (if defined): `{ perPage, totalPages, path }`
-- Build `tree` (if `tree: true`): assemble by `parent` / `navOrder`
-- Returns: `{ [colName]: { items, pagination, tree, singleton } }`
+  return datasets;
+}
+```
 
-#### `expandTemplates(manifest, collections)`
-Expand declarative templates into a list of concrete render tasks:
+- **No hardcoded source names.** Do not special-case `posts` / `collections.post`. Every source is generic.
+- `normalizeItem` applies `def.map`, `def.defaults`, coerces `date` via `String(...)`, defaults `tags`/`categories` to `[]`, and **flattens all remaining keys to the top level**.
+- Unknown `type` → throw (no silent skip, no fallback to markdown).
 
-```js
-function expandTemplates(manifest, collections) {
+### `expandViews(views, datasets, config)`
+
+```javascript
+function expandViews(views, datasets, config) {
   const tasks = [];
-  for (const tpl of (manifest.templates || [])) {
-    if (tpl.type !== 'page') continue;
-
-    const langs = tpl.lang?.length ? tpl.lang : [null];
-    const cols = tpl.forEach === 'collections' ? Object.keys(collections) : [null];
-
+  for (const view of views) {
+    if (view.type !== 'page') continue;
+    const langs = view.lang?.length ? view.lang : [null];
     for (const lang of langs) {
-      for (const colName of cols) {
-        const col = colName ? collections[colName] : null;
+      const ctxBase = { lang, ...injectUsed(view.use, datasets) };
 
-        if (tpl.forEach === 'items' && col) {
-          for (const item of col.items) tasks.push(instantiate(tpl, { collection: colName, item, lang, col }));
-        } else if (tpl.forEach === 'pagination' && col?.pagination) {
-          for (let p = 1; p <= col.pagination.totalPages; p++) tasks.push(instantiate(tpl, { collection: colName, page: p, pagination: col.pagination, lang, col }));
-        } else if (tpl.forEach === 'collections' && col) {
-          tasks.push(instantiate(tpl, { collection: colName, col, lang }));
-        } else {
-          tasks.push(instantiate(tpl, { collection: colName, col, lang }));
+      if (view.for?.each) {
+        const items = filterWhere(datasets[view.for.each] || [], view.for.where);
+        for (const item of items) {
+          tasks.push(instantiate(view, { ...ctxBase, source: view.for.each, item }));
         }
+      } else if (view.for?.paginate) {
+        const all = filterWhere(datasets[view.for.paginate] || [], view.for.where);
+        const perPage = view.for.perPage || 10;
+        const totalPages = Math.max(1, Math.ceil(all.length / perPage));
+        for (let p = 1; p <= totalPages; p++) {
+          const items = all.slice((p - 1) * perPage, p * perPage);
+          const pagination = buildPagination(p, totalPages, view.output);
+          tasks.push(instantiate(view, { ...ctxBase, source: view.for.paginate, items, page: p, pagination }));
+        }
+      } else {
+        tasks.push(instantiate(view, ctxBase));   // single page (home / 404 / computed)
       }
     }
   }
   return tasks;
 }
 
-function instantiate(tpl, ctx) {
+function instantiate(view, ctx) {
   return {
-    name: tpl.name,
-    layout: tpl.layout,
-    file: tpl.file,
-    output: interpolate(tpl.output, { ...tpl.data, ...ctx }),
-    data: { ...tpl.data, ...ctx }
+    name: view.name,
+    layout: view.layout,
+    file: view.file,
+    output: normalizePath(interpolate(view.output, { ...view.data, ...ctx, slug: ctx.item?.slug, field: ctx.item?.value })),
+    data: { ...view.data, ...ctx }
   };
+}
+
+function injectUsed(use, datasets) {
+  const out = {};
+  for (const name of (use || [])) out[name] = datasets[name] || [];
+  return out;   // e.g. view with use:["posts","products"] gets top-level `posts`, `products`
 }
 ```
 
-#### `interpolate(template, ctx)`
-Path template interpolation, supports placeholders:
-- `{collection}`, `{slug}`, `{n}`, `{lang}`
-- `{date:YYYY}`, etc. (date format)
-- Undefined placeholder → empty string
+- `for.each` / `for.paginate` / neither — three branches, source-agnostic. No enum of "collections/items/pagination".
+- `where` filters before expansion.
+- `use` injects whole datasets by name for aggregation pages.
 
-#### `computeTaskHash(task, tokens, config, interactions)`
-Compute the task input hash, used for incremental cache:
+### `interpolate(template, ctx)` & `normalizePath(p)`
+
+- Placeholders: `{slug}`, `{n}` (→ `ctx.page`), `{lang}`, `{source}`, `{field}`, `{date:FMT}`. Undefined → `''`.
+- `normalizePath` collapses `//` → `/`, ensures a single trailing `/` for directory outputs, and appends `index.html` at write time for dir-style paths (fixes dev EISDIR).
+
+### `renderWithLayout(eta, layoutName, pageTemplate, data)`
+
+```javascript
+const withExtras = { ...data, sourceName: data.source };
+const body = await eta.renderAsync(pageTemplate, withExtras);
+return await eta.renderAsync(layoutName, { ...withExtras, body });
+```
+
+- Eta `useWith: true`: layout must concat with `<%~ body %>` (not `<%- body %>`).
+- Templates access fields at top level (`<%= site.title %>`, `<%= item.price %>`); never `it.`.
+
+### General Globals (home page)
+
+The home template often wants "recent N" + "all-X link". Compute generically over the first non-singleton source, but prefer whatever the home view declares in `use`:
+
+```javascript
+function recentGlobals(datasets, manifest) {
+  const primary = Object.keys(datasets).find(n => (datasets[n] || []).length) || null;
+  return primary
+    ? { recentItems: datasets[primary].slice(0, 5), allItemsUrl: `/${primary}/` }
+    : { recentItems: [], allItemsUrl: '/' };
+}
+```
+
+Templates uniformly use `recentItems` / `allItemsUrl`. Do not invent per-source global names.
+
+### `computeTaskHash(task, tokens, config, interactions, datasets)`
+
 ```
 hash = sha256(
-  contentFile (if any) +
-  templateFile (task.file) +
-  layoutFile (task.layout) +
+  sourceFile (markdown item file, if any) +
+  JSON.stringify(task.data.item || task.data.items || null) +   // covers API/derived items
+  templateFile (task.file) + layoutFile (task.layout) +
   JSON.stringify(tokens) +
-  JSON.stringify({ site: config.site, pages: config.pages }) +
+  JSON.stringify({ site: config.site, geo: config.geo }) +
   JSON.stringify(interactions) +
-  assets/style.css content (if exists) +
-  assets/script.js content (if exists)
+  style.css + script.js (if present)
 )
 ```
 
-#### `renderWithLayout(eta, layoutName, pageTemplate, data)`
-```js
-const dataWithExtras = { ...data, collectionName: data.collection || data.collectionName };
-const body = await eta.renderAsync(pageTemplate, dataWithExtras);
-return await eta.renderAsync(layoutName, { ...dataWithExtras, body });
-```
-- **Note**: Eta defaults to `useWith: true`; in the layout, body concatenation must use `<%~ body %>` (not `<%- body %>`, which would output an empty string).
-- In templates, access fields directly at top level (`<%= site.title %>`); do NOT prefix with `it.` (`<%= it.site.title %>` will fail).
-- `collectionName` compatibility: `data.collection` is automatically exposed as `collectionName`, so the template can uniformly map type names like "post" to friendly labels.
+- For API/derived sources there is no source file, so the item JSON participates directly. A changed API snapshot changes the hash → the page rebuilds.
 
-### General Globals (for home page)
+### Mandatory Self-Test (after generation)
 
-The home page template needs "most recent N items" + "all-X link". `render.js` finds the first non-`page` collection as `primaryCollection`:
+Run all of these; do not claim success on partial pass:
 
-```js
-const primaryColName = Object.keys(collections).find(k => k !== 'page') || 'post';
-globals.recentItems = (collections[primaryColName]?.items || []).slice(0, 5);
-globals.allItemsUrl = `/${primaryColName}/`;
-```
+1. `node .xiaoyi-ssg/render.js --fresh` → exit 0, prints `build done · rendered=N cached=0 …`.
+2. `grep -l '<html' public/index.html` → hit.
+3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` → ≥ 1.
+4. Every `view.for.each` / `for.paginate` names a `source` that exists in `sources`.
+5. For every markdown source, `#items ≈ #detail pages` (allowing GEO/feed/sitemap/404 exceptions).
+6. **Security**: for every source with `auth.env`, the resolved `process.env[...]` value does NOT appear anywhere under `public/` (`assertNoSecretsInOutput`). Fail hard if it does.
+7. Design source check (below).
 
-The template uniformly uses `recentItems` and `allItemsUrl` to avoid writing different global names per content type (`recentPosts` / `recentProjects`). If you want the old naming, add a top-level compat in the template: `<% const recentPosts = recentItems %>`.
+### Design System Source Check
 
-### Mandatory Self-Test (run after generation)
-
-After generating the pipeline, **the AI must run these 5 checks** before declaring success:
-
-1. `node .xiaoyi-ssg/render.js --fresh` → exit code 0, output `build done · rendered=N cached=0 files=... · Nms`
-2. `grep -l '<html' public/index.html` → hit
-3. `grep -c '<%~ body' .xiaoyi-ssg/templates/base.html` → at least 1 (confirm layout uses raw body)
-4. `grep -cE 'recentItems|recentPosts' .xiaoyi-ssg/templates/index.html` → at least 1 (home page uses recent items)
-5. `find source/_* -name '*.md' | wc -l` == `find public -name 'index.html' | wc -l - 3` (3 = feed/sitemap/404 exceptions)
-
-If any fails, the pipeline is broken and must be fixed; do not claim "it mostly works".
-
-### Design System Source Mandatory Check
-
-Before generating `assets/style.css`, the AI must load `frontend-design` and normalize into `.xiaoyi-ssg-design-tokens.json`:
-
-1. **Check 1**: `.xiaoyi-ssg-design-tokens.json` must contain a non-empty `source_skill` field with value `"frontend-design"` (or `"self-extracted"` only after explicit `--allow-self-extracted`).
-2. **Check 2**: `grep -c 'source_skill' <SITE_ROOT>/.xiaoyi-ssg-design-tokens.json` ≥ 1.
-3. **Check 3**: `source_skill` does NOT accept `popular-web-designs/*` / `claude-design` / `design-md` / etc.
-4. **Check 4**: CSS font stacks, primary colors, radii, and motion must be traceable to `source_skill` / `source_ref` and `normalization_notes`; the AI is not allowed to redesign.
+Before generating `assets/style.css`, load `frontend-design`, normalize to `.xiaoyi-ssg-design-tokens.json`, and confirm `source_skill == "frontend-design"` (or `"self-extracted"` only after `--allow-self-extracted`). CSS must trace to the tokens; the AI does not redesign.
 
 ---
 
 ## dev.js — Dev Server
 
-### Core Structure
-
 ```javascript
 import { build } from './render.js';
 import chokidar from 'chokidar';
 
-// 1. Initial build
 await build(false);
-
-// 2. Start HTTP server serving public/ (port 3000 auto-increment)
-// 3. Inject SSE client script before HTML </body>
-// 4. chokidar watch:
-//    - source/**/*.md
-//    - .xiaoyi-ssg/templates/**
-//    - .xiaoyi-ssg/assets/**
-//    - .xiaoyi-ssg/template-manifest.json
-//    - .xiaoyi-ssg/content-types.json
-//    - .xiaoyi-ssg/interactions.manifest.json
-//    - .xiaoyi-ssg-design-tokens.json
-//    - config.yml
-//    - source/_media/**
-// 5. On change → debounce 300ms → incremental build build(false) → SSE push reload
+// HTTP server on config.dev.port (auto-increment on EADDRINUSE)
+// inject SSE client before </body> (dev only)
+// watch: source/**/*.md, .xiaoyi-ssg/templates/**, .xiaoyi-ssg/assets/**,
+//        .xiaoyi-ssg/sources/**, .xiaoyi-ssg/template-manifest.json,
+//        .xiaoyi-ssg/content-types.json, .xiaoyi-ssg/interactions.manifest.json,
+//        .xiaoyi-ssg-design-tokens.json, config.yml, source/_media/**
+// on change → debounce 300ms → build(false) → SSE reload
 ```
 
-### Key Points
-
-- **Reuse build**: dev.js `import { build } from './render.js'`, in-process call, avoiding `execSync` overhead
-- **Watch manifest change**: `template-manifest.json` change triggers full re-expansion + render
-- **SSE injection**: only dev mode injects; build output does not
+- Remote sources are **not** re-fetched on every keystroke: dev respects each source's snapshot + `cache.ttl`. A manual full refresh (`build:fresh`) or expired TTL triggers a re-fetch. This keeps dev fast and avoids hammering APIs.
+- Reuse `build` in-process (no `execSync`).
 
 ### Mandatory: Port Auto-Increment
-
-The dev server MUST auto-increment port when the configured port is in use. Do NOT hardcode a single port. Required behaviour:
 
 ```javascript
 function startServerWithPortRetry(server, basePort, maxAttempts = 20) {
@@ -306,20 +316,13 @@ function startServerWithPortRetry(server, basePort, maxAttempts = 20) {
     const tryListen = (port) => {
       server.once('error', (err) => {
         if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
-          attempt++;
-          console.warn(`⚠️  Port ${port} in use, trying ${port + 1}...`);
+          attempt++; console.warn(`⚠️  Port ${port} in use, trying ${port + 1}...`);
           tryListen(port + 1);
-        } else {
-          reject(err);
-        }
+        } else reject(err);
       });
       server.once('listening', () => {
         const actualPort = server.address().port;
-        if (actualPort !== basePort) {
-          console.log(`🌐 Dev server running at http://localhost:${actualPort} (port ${basePort} was occupied)`);
-        } else {
-          console.log(`🌐 Dev server running at http://localhost:${actualPort}`);
-        }
+        console.log(`🌐 Dev server running at http://localhost:${actualPort}${actualPort !== basePort ? ` (port ${basePort} was occupied)` : ''}`);
         resolve(actualPort);
       });
       server.listen(port);
@@ -329,34 +332,30 @@ function startServerWithPortRetry(server, basePort, maxAttempts = 20) {
 }
 ```
 
-The AI MUST emit this exact pattern (or a functional equivalent) into the generated `dev.js`. A hardcoded `server.listen(port, …)` without retry is forbidden.
-
-The default base port is `config.dev.port` (typically `3000`). On conflict, increment up to `basePort + maxAttempts`. If all attempts fail, exit with non-zero code and a clear message.
+Emit this exact pattern (or a functional equivalent). A hardcoded `server.listen(port)` without retry is forbidden. Default base port `config.dev.port` (typically `3000`); on exhaustion, exit non-zero with a clear message.
 
 ---
 
 ## Interaction Data Generation (buildExtras)
 
-At the end of the build, generate `public/assets/data/*.json` for browser interactions to consume:
+Generate `public/assets/data/*.json` for browser interactions. Iterate `interactions.interactions`; the data is drawn from `datasets` (any source, not just markdown). **Never include secret-derived fields** — only public, display-safe fields.
 
 ```javascript
-function buildExtras(config, collections, interactions) {
+function buildExtras(config, datasets, interactions) {
   const data = {};
-  for (const interaction of interactions.interactions || []) {
-    if (interaction.name.includes('search')) {
-      const allItems = Object.values(collections).flatMap(c => c.items);
-      data['search-index.json'] = allItems.map(item => ({
-        title: item.title, url: item.url, type: item.collection,
-        excerpt: item.excerpt || '', tags: item.tags || [],
-        text: [item.title, item.excerpt].filter(Boolean).join(' ')
+  const allItems = Object.values(datasets).flatMap(d => d);   // every source contributes
+  for (const it of (interactions.interactions || [])) {
+    if (it.name.includes('search')) {
+      data['search-index.json'] = allItems.map(i => ({
+        title: i.title, url: i.url, type: i.source, excerpt: i.excerpt || '',
+        tags: i.tags || [], text: [i.title, i.excerpt].filter(Boolean).join(' ')
       }));
     }
-    if (interaction.name.includes('filter')) {
-      const types = interaction.content_types || Object.keys(collections);
-      data[`${interaction.name}.json`] = {
-        items: types.flatMap(type => (collections[type] || { items: [] }).items.map(item => ({
-          title: item.title, url: item.url, type,
-          tags: item.tags || [], categories: item.categories || [], date: item.date || ''
+    if (it.name.includes('filter')) {
+      const names = it.content_types || Object.keys(datasets);
+      data[`${it.name}.json`] = {
+        items: names.flatMap(n => (datasets[n] || []).map(i => ({
+          title: i.title, url: i.url, type: n, tags: i.tags || [], categories: i.categories || [], date: i.date || ''
         })))
       };
     }
@@ -367,248 +366,25 @@ function buildExtras(config, collections, interactions) {
 
 ---
 
-## Additional Artifacts
+## GEO Generators
 
-| Artifact | Generation |
-|----------|------------|
-| `feed.xml` / `feed.json` | Iterate `collections.posts` or `collections.articles` top 50 items |
-| `sitemap.xml` | Iterate all `tasks` `output` (excluding 404) |
-| `404.html` | Render the `404` template (declared in manifest) |
-| `llms.txt` | Aggregate all content items, always on |
-| `llms-full.txt` | Opt-in via `config.geo.llms_full`, concat raw markdown bodies |
-| `robots.txt` | Always on, 15-bot AI crawler list + policy |
-| `<page>/index.md` | Per-page markdown mirror, opt-out via `config.geo.markdown_mirror: false` |
+> Full spec: [`geo-conventions.md`](./geo-conventions.md). GEO aggregates over the user's **markdown** sources (existing content is the source). API/derived items may appear in `llms.txt` link lists but have no markdown mirror (no source file). `contentFileMap` (built by the markdown adapter) maps page url → source `.md` for the mirror and `llms-full.txt`.
 
----
-
-## GEO Generators (Generative Engine Optimization)
-
-> Full spec: [`geo-conventions.md`](./geo-conventions.md). This section is the render.js side: function shapes, output paths, cache participation.
-
-### `generateLlmsTxt(collections, config, contentTypes)`
-
-Always on. Writes `public/llms.txt`.
+Wire-up after feeds/sitemap:
 
 ```javascript
-function generateLlmsTxt(collections, config, contentTypes) {
-  const site = config.site || {};
-  const navOrder = (contentTypes && contentTypes.nav_order) || Object.keys(collections);
-  const lines = [];
-  lines.push(`# ${site.title || ''}`);
-  if (site.description) lines.push(`\n> ${site.description}\n`);
-  else lines.push('');
-  const sortedCols = navOrder.filter(k => collections[k]).concat(
-    Object.keys(collections).filter(k => !navOrder.includes(k))
-  );
-  for (const colName of sortedCols) {
-    const col = collections[colName];
-    if (!col || col.singleton || !col.items || col.items.length === 0) continue;
-    const label = (col.typeDef && col.typeDef.label) || colName;
-    lines.push(`\n## ${label}\n`);
-    for (const item of col.items) {
-      if (item.draft) continue;
-      const url = `${site.url || ''}${item.url}`;
-      const desc = item.summary || item.excerpt || item.description || '';
-      lines.push(desc
-        ? `- [${item.title}](${url}): ${desc}`
-        : `- [${item.title}](${url})`);
-    }
-  }
-  // Singleton pages go in a flat ## Pages section
-  const singletonEntries = [];
-  for (const [colName, col] of Object.entries(collections)) {
-    if (!col.singleton || !col.items || !col.items[0]) continue;
-    const item = col.items[0];
-    const url = `${site.url || ''}${item.url}`;
-    const desc = item.summary || item.excerpt || item.description || '';
-    singletonEntries.push(desc
-      ? `- [${item.title}](${url}): ${desc}`
-      : `- [${item.title}](${url})`);
-  }
-  if (singletonEntries.length) {
-    lines.push(`\n## Pages\n`);
-    for (const e of singletonEntries) lines.push(e);
-  }
-  writeFileSync(join(PUBLIC_DIR, 'llms.txt'), lines.join('\n') + '\n', 'utf-8');
-}
-```
-
-### `generateLlmsFullTxt(collections, config)`
-
-Opt-in. Writes `public/llms-full.txt`. Reads raw markdown from source files (not `body_html`).
-
-```javascript
-function generateLlmsFullTxt(collections, config, contentFileMap) {
-  if (!config.geo || !config.geo.llms_full) return;
-  const site = config.site || {};
-  const parts = [`# ${site.title || ''}\n`];
-  if (site.description) parts.push(`> ${site.description}\n`);
-  for (const [colName, col] of Object.entries(collections)) {
-    if (!col || !col.items) continue;
-    for (const item of col.items) {
-      if (item.draft) continue;
-      const sourcePath = contentFileMap && contentFileMap.get(item.url);
-      if (!sourcePath) continue;
-      const raw = readFileSync(sourcePath, 'utf-8');
-      const m = raw.match(/^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)$/);
-      const body = m ? m[1] : raw;
-      parts.push(`\n---\n\n## [${item.title}](${site.url || ''}${item.url})\n\n${body.trim()}\n`);
-    }
-  }
-  writeFileSync(join(PUBLIC_DIR, 'llms-full.txt'), parts.join(''), 'utf-8');
-}
-```
-
-`contentFileMap` is `Map<pageUrl, sourceMdPath>` built during `scanCollections`.
-
-### `generateRobotsTxt(config)`
-
-Always on. Writes `public/robots.txt`. Hardcoded 15-bot list.
-
-```javascript
-const AI_BOTS = [
-  'GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'Claude-Web', 'ClaudeBot',
-  'PerplexityBot', 'Perplexity-User', 'Google-Extended', 'anthropic-ai',
-  'Bytespider', 'CCBot', 'cohere-ai', 'Applebot-Extended', 'Amazonbot', 'Meta-ExternalAgent'
-];
-
-function generateRobotsTxt(config) {
-  const site = config.site || {};
-  const geo = config.geo || {};
-  const policy = geo.ai_bots === 'block' ? 'Disallow' : 'Allow';
-  const customRules = geo.ai_bot_rules || {};
-  const lines = ['User-agent: *'];
-  lines.push(geo.noai ? 'Disallow: /' : 'Allow: /');
-  if (site.url) lines.push(`\nSitemap: ${site.url}/sitemap.xml`);
-  for (const bot of AI_BOTS) {
-    let botPolicy = policy;
-    if (geo.ai_bots === 'custom') {
-      const rule = customRules[bot];
-      botPolicy = rule === 'block' ? 'Disallow' : 'Allow';
-    }
-    lines.push(`\nUser-agent: ${bot}`);
-    lines.push(`${botPolicy}: /`);
-  }
-  lines.push('\n# Generated by xiaoyi-ssg');
-  writeFileSync(join(PUBLIC_DIR, 'robots.txt'), lines.join('\n') + '\n', 'utf-8');
-}
-```
-
-### `mirrorMarkdown(tasks, contentFileMap, config)`
-
-Always on when `config.geo.markdown_mirror !== false`. Writes per-page `<url>/index.md`.
-
-```javascript
-function mirrorMarkdown(tasks, contentFileMap, config) {
-  if (config.geo && config.geo.markdown_mirror === false) return;
-  if (!contentFileMap) return;
-  for (const task of tasks) {
-    if (!task.output) continue;
-    const sourcePath = contentFileMap.get(task.output);
-    if (!sourcePath) continue;  // not a content-page task (skip singletons, lists)
-    const raw = readFileSync(sourcePath, 'utf-8');
-    const m = raw.match(/^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)$/);
-    const body = m ? m[1] : raw;
-    const outDir = join(PUBLIC_DIR, task.output.replace(/\/$/, ''));
-    ensureDir(outDir);
-    writeFileSync(
-      join(outDir, 'index.md'),
-      body.trimEnd() + `\n\n<!-- mirrored from: ${relative(SITE_ROOT, sourcePath)} by xiaoyi-ssg -->\n`,
-      'utf-8'
-    );
-  }
-}
-```
-
-### `buildJsonLd(item, col, site, config, colName)`
-
-Returns a JSON-LD string (or empty) injected into `<head>` via `data.jsonLd`.
-
-```javascript
-const SCHEMA_MAP = {
-  post: 'BlogPosting', posts: 'BlogPosting', article: 'BlogPosting', articles: 'BlogPosting',
-  blog: 'BlogPosting',
-  doc: 'TechArticle', docs: 'TechArticle',
-  project: 'CreativeWork', projects: 'CreativeWork',
-  talk: 'Event', talks: 'Event'
-};
-
-function buildJsonLd(item, col, site, config, colName, isSingleton) {
-  if (config.geo && config.geo.jsonld === false) return '';
-  if (item && item.draft) return '';
-  if (isSingleton && (!item || colName === 'landing')) {
-    // WebSite for landing
-    const ld = {
-      '@context': 'https://schema.org',
-      '@type': 'WebSite',
-      name: site.title, description: site.description,
-      url: site.url, inLanguage: site.language,
-      publisher: { '@type': 'Organization', name: site.title }
-    };
-    return `<script type="application/ld+json">${JSON.stringify(ld)}</script>`;
-  }
-  if (!item) return '';
-  const mappedType = (item.content_type && SCHEMA_MAP[item.content_type])
-    || SCHEMA_MAP[colName]
-    || 'Article';
-  const desc = item.summary || item.excerpt || '';
-  const ld = {
-    '@context': 'https://schema.org',
-    '@type': mappedType,
-    headline: item.title,
-    description: desc,
-    url: `${site.url || ''}${item.url}`,
-    datePublished: item.date || undefined,
-    dateModified: item.updated || item.date || undefined,
-    author: { '@type': 'Person', name: site.author || site.title },
-    publisher: { '@type': 'Organization', name: site.title },
-    keywords: Array.isArray(item.topics) ? item.topics.join(', ') : undefined,
-    inLanguage: site.language
-  };
-  Object.keys(ld).forEach(k => ld[k] === undefined && delete ld[k]);
-  return `<script type="application/ld+json">${JSON.stringify(ld)}</script>`;
-}
-```
-
-### Wire-up Order
-
-After `generateFeed` and `generateSitemap`, append:
-
-```javascript
-generateLlmsTxt(collections, config, contentTypes);
-if (config.geo && config.geo.llms_full) {
-  generateLlmsFullTxt(collections, config, contentFileMap);
-}
+generateLlmsTxt(datasets, config, contentTypes);
+if (config.geo?.llms_full) generateLlmsFullTxt(datasets, config, contentFileMap);
 generateRobotsTxt(config);
 mirrorMarkdown(tasks, contentFileMap, config);
 ```
 
-### Cache Hash Inputs
+- `generateLlmsTxt`: iterate `datasets` in nav order; skip empty; group by source label; list `- [title](url): summary`.
+- `generateRobotsTxt`: always on, fixed 15-bot list (`geo-conventions.md`), policy from `config.geo.ai_bots`.
+- `mirrorMarkdown`: only for tasks whose `output` maps to a markdown source file in `contentFileMap`; skip API/derived/list/singleton pages.
+- JSON-LD (`buildJsonLd`) injected via `data.jsonLd`; `SCHEMA_MAP` keyed by `item.content_type` or source name, default `Article` (or `WebSite` for a landing/home singleton).
 
-| Output | Inputs in hash |
-|--------|----------------|
-| `llms.txt` | `collections[*].items[].title`, `summary`, `excerpt`, `url`, `draft`; `config.site.title/description/url`; `contentTypes.nav_order`; per-collection `manifest.collections[*].sort` |
-| `llms-full.txt` | All `source/_<type>/*.md` raw content + per-collection sort |
-| `robots.txt` | `config.geo` block + `config.site.url` |
-| `<page>/index.md` | The single source `.md` content for that page |
-| JSON-LD on page | Item `summary`/`topics`/`updated`/`content_type` + `site.author`/`site.language` |
-
-`--fresh` re-emits all GEO outputs regardless.
-
-### `contentFileMap` Construction
-
-During `scanCollections`, when iterating items:
-
-```javascript
-for (const f of files) {
-  // ... existing item building ...
-  items.push(item);
-  // record mapping for markdown mirror
-  contentFileMap.set(item.url, f);
-}
-```
-
-The map is module-level (or passed via build state) and used after render loop.
+The GEO function bodies are unchanged from prior spec except they iterate `datasets` (source-generic) rather than a `collections` object. Do not invent a `_geo/` directory.
 
 ---
 
@@ -617,28 +393,21 @@ The map is module-level (or passed via build state) and used after render loop.
 `.xiaoyi-ssg-cache.json`:
 
 ```json
-{
-  "version": 1,
-  "outputs": {
-    "/blog/page/1/": { "hash": "sha256...", "inputs": ["template-manifest.json", "list.html", "base.html"] }
-  }
-}
+{ "version": 2, "outputs": { "/blog/page/1/": { "hash": "sha256...", "inputs": ["template-manifest.json", "list.html", "base.html"] } } }
 ```
+
+Source snapshots live separately under `.xiaoyi-ssg/.cache/sources/<key>.json` (git-ignored). See [`data-sources.md`](./data-sources.md) § Snapshot Cache.
 
 ---
 
-## Placeholder Substitution at Generation Time
-
-When AI generates `render.js` / `dev.js`, replace the file header metadata:
+## File Header (generation-time metadata)
 
 ```javascript
 /**
- * xiaoyi-ssg rendering pipeline - template-manifest-driven
- * Regenerate via: /xiaoyi-ssg → adjust style/content type → regenerate pipeline
+ * xiaoyi-ssg rendering pipeline (v2 — source + view engine)
+ * Regenerate via: /xiaoyi-ssg → adjust sources/views/style → regenerate pipeline
  * Generated at: {{GENERATED_AT}}
- * Manifest hash: {{MANIFEST_HASH}}
- * Tokens Hash: {{TOKENS_HASH}}
- * Content-Types Hash: {{CONTENT_TYPES_HASH}}
+ * Manifest hash: {{MANIFEST_HASH}}  Tokens: {{TOKENS_HASH}}  Content-Types: {{CONTENT_TYPES_HASH}}
  */
 ```
 
@@ -646,15 +415,16 @@ When AI generates `render.js` / `dev.js`, replace the file header metadata:
 
 ## Key Generation Constraints
 
-1. **ESM modules** — all `.js` use `import`/`export`; `package.json` has `"type": "module"`.
-2. **Two separate files** — `render.js` (build) and `dev.js` (dev) are independent.
-3. **Minimal default dependencies** — `js-yaml`, `marked`, `chokidar`, `eta`; pin and record additional packages in `interactions.manifest.json` when interactions need them.
-4. **Complete template capability** — Eta supports HTML escaping, raw HTML, conditionals, loops, async, custom filters.
-5. **Determinism** — same input produces same output (cache hash mechanism).
-6. **Incremental build** — hash cache; unchanged tasks skip render.
-7. **Browser interaction** — build output must be able to load `assets/script.js` and required modules.
-8. **dev server injection** — only dev mode injects the SSE script.
-9. **Port auto-increment** — when dev.js port is in use, automatically +1 and retry.
-10. **Debounce** — 300ms debounce + build lock after file change.
-11. **Runtime validation** — manifest, config, tokens, content-types validated at startup.
-12. **No fallback branch** — no manifest or validation failure → direct error exit, **incompatible with old pipeline versions**.
+1. **ESM modules** — `import`/`export`; `package.json` `"type": "module"`.
+2. **Two files** — `render.js` (build), `dev.js` (dev), independent.
+3. **Adapter directory** — `.xiaoyi-ssg/sources/*.js`, one per source type; engine dispatches on `type`.
+4. **Minimal default deps** — `js-yaml`, `marked`, `chokidar`, `eta`; pin extras in `interactions.manifest.json`.
+5. **Determinism** — same inputs (incl. source snapshots) → same output; live fetches restored to reproducibility via snapshot cache.
+6. **Incremental build** — hash cache; unchanged tasks skip render; changed API snapshot re-renders dependent pages.
+7. **Browser interaction** — build output loads `assets/script.js` and modules; interactions never call authed APIs.
+8. **Dev SSE injection** — dev only.
+9. **Port auto-increment** — mandatory in `dev.js`.
+10. **Debounce** — 300ms + build lock.
+11. **Runtime validation** — manifest (v2), config, tokens, content-types validated at startup.
+12. **Unknown source/view type → explicit error** naming the missing adapter or invalid field. No silent fallback, no markdown assumption.
+13. **Build-time fetch only; secrets from `process.env`, never written to any artifact.** Enforced by `assertNoSecretsInOutput`.

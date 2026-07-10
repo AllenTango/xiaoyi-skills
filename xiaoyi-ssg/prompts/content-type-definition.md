@@ -1,27 +1,30 @@
-# Content Type Definition Prompt
+# Markdown Source Field Modeling
 
-This prompt guides the AI in defining content types with the user through dialogue and generating `content-types.json`.
+This prompt covers one specific data origin: **local markdown sources**. In v2, markdown is one of seven Source Adapters, not the center of the engine. Use this file when the user is authoring content that lives as `source/_<type>/*.md`. For other data origins, see [`data-sources.md`](./data-sources.md).
+
+> **v2 shift.** Content modeling is now narrower than before: it only describes the front-matter fields of a markdown source (validation, defaults, display hints). The engine itself no longer has "content types" as a first-class concept; pages are described by `views` over `sources`. The `content-types.json` file still exists for front-matter validation and AI-driven content authoring, but `render.js` reads sources, not content types, for rendering.
+
+---
 
 ## Interaction Flow
 
 ```
-AI: "What content types do you need? For example: articles, projects, videos, galleries, pages, talks, essays..."
-User: "Projects (cover, tech stack, links), articles (title, date, tags), about page"
-AI: For each type, ask about fields (see below)
-AI: Generate content-types.json
-AI: "Confirm? If yes, the matching list/detail templates will be generated."
+AI: "Where does the content live? Local markdown, API, JSON file, feed, or derived from another source?"
+User: "Local markdown for posts and projects."
+AI: "For each markdown source, tell me: directory name, label, and which fields each .md file needs."
+User: "posts under source/_posts, fields: title, date, tags, cover, excerpt, draft."
+AI: Generate / update content-types.json
+AI: "Confirm? If yes, the matching sources + views will be generated in template-manifest.json."
 User: "Confirmed"
-AI: Trigger pipeline regeneration
+AI: Regenerate pipeline (manifest v2)
 ```
 
-## Field Definition Guidance
+For each markdown source, ask in this order:
 
-For each content type, ask in this order:
-
-### 1. Basic Identity (Required)
+### 1. Basic Identity
 
 ```
-AI: "Type name (kebab-case, e.g., project, talk, essay)?"
+AI: "Type name (kebab-case, e.g., post, project, talk)?"
 User: "project"
 AI: "English label?"
 User: "Project"
@@ -29,10 +32,10 @@ AI: "Content directory name (default source/_project)?"
 User: "Use default"
 ```
 
-### 2. Field Definitions (Core)
+### 2. Field Definitions
 
 ```
-AI: "Define fields. Tell me for each: field name, type, required, default, description. Common types:
+AI: "Define front-matter fields. Tell me for each: field name, type, required, default, description. Common types:
 - string: single-line text
 - datetime: date and time (YYYY-MM-DD HH:MM:SS)
 - date: date only (YYYY-MM-DD)
@@ -40,7 +43,7 @@ AI: "Define fields. Tell me for each: field name, type, required, default, descr
 - string[]: array of strings
 - url: link
 - number: number
-- object: any object
+- object: any JSON object
 
 Required field recommendation: title, date"
 ```
@@ -49,18 +52,18 @@ User provides them one by one; the AI organizes:
 
 ```json
 "fields": {
-  "title": { "type": "string", "required": true },
-  "date": { "type": "date", "required": true },
-  "cover": { "type": "string", "required": true, "description": "Cover image path" },
-  "tech_stack": { "type": "string[]", "required": false, "description": "Tech stack tags" },
-  "repo_url": { "type": "url", "required": false },
-  "live_url": { "type": "url", "required": false },
-  "description": { "type": "string", "required": true },
-  "featured": { "type": "boolean", "default": false }
+  "title":       { "type": "string",   "required": true },
+  "date":        { "type": "date",     "required": true },
+  "cover":       { "type": "string",   "required": true, "description": "Cover image path" },
+  "tech_stack":  { "type": "string[]", "required": false, "description": "Tech stack tags" },
+  "repo_url":    { "type": "url",      "required": false },
+  "live_url":    { "type": "url",      "required": false },
+  "description": { "type": "string",   "required": true },
+  "featured":    { "type": "boolean",  "default": false }
 }
 ```
 
-### 3. Media / Relationship Fields (Optional)
+### 3. Media / Relationship Fields
 
 ```
 AI: "Do you need special media fields?
@@ -73,25 +76,33 @@ Do you need relationship fields?
 - series: series membership"
 ```
 
-### 4. Templates and Pagination
+### 4. Pagination / Layout (a view concern, not a content-type concern)
+
+In v2, page layout (grid/list/masonry) and pagination per-page count live in the **view** declaration, not in the content type. Ask:
 
 ```
-AI: "List page layout preference? (grid / list / masonry, default grid)"
+AI: "List view layout preference? (grid / list / masonry, default grid)"
 AI: "How many items per page? (default 12)"
 ```
 
-## Content Type Categories and Default Field Suggestions
+These answers go into the matching `view.for.paginate.perPage` and the template file (`list.html`).
 
-| Type | Typical fields | Description |
-|------|----------------|-------------|
-| `post` (article) | title, date, tags[], categories[], cover, excerpt, draft | Standard blog post |
-| `project` (project) | title, date, cover, tech_stack[], repo_url, live_url, description, featured | Portfolio project |
-| `video` (video) | title, date, video_url, embed_type (youtube/bilibili/vimeo/local), cover, tags[] | Video log |
-| `gallery` (gallery) | title, date, images[], cover, tags[] | Photo gallery / album |
-| `page` (page) | title, date, nav, nav_title, nav_order | Standalone page (about/contact) |
-| `talk` (talk) | title, date, event, video_url, slides_url, cover, description | Conference talk |
-| `essay` (essay) | title, date, tags[], cover, excerpt | Short piece / reflection |
-| `link` (link) | title, date, url, description, tags[] | Link bookmarks / favorites |
+---
+
+## Common Markdown Source Field Sets
+
+| Use case | Typical fields |
+|----------|----------------|
+| `post` (article) | title, date, tags[], categories[], cover, excerpt, draft |
+| `project` | title, date, cover, tech_stack[], repo_url, live_url, description, featured |
+| `video` | title, date, video_url, embed_type (youtube/bilibili/vimeo/local), cover, tags[] |
+| `gallery` | title, date, images[], cover, tags[] |
+| `page` (singleton) | title, date, nav, nav_title, nav_order |
+| `talk` | title, date, event, video_url, slides_url, cover, description |
+| `essay` | title, date, tags[], cover, excerpt |
+| `link` | title, date, url, description, tags[] |
+
+---
 
 ## Generation Spec
 
@@ -105,49 +116,46 @@ Output `content-types.json`:
       "label": "Project",
       "dir": "source/_projects",
       "fields": {
-        "title": { "type": "string", "required": true },
-        "date": { "type": "date", "required": true },
-        "cover": { "type": "string", "required": true },
-        "tech_stack": { "type": "string[]", "required": false },
-        "repo_url": { "type": "url", "required": false },
-        "live_url": { "type": "url", "required": false },
-        "description": { "type": "string", "required": true },
-        "featured": { "type": "boolean", "default": false }
+        "title":       { "type": "string",   "required": true },
+        "date":        { "type": "date",     "required": true },
+        "cover":       { "type": "string",   "required": true },
+        "tech_stack":  { "type": "string[]", "required": false },
+        "repo_url":    { "type": "url",      "required": false },
+        "live_url":    { "type": "url",      "required": false },
+        "description": { "type": "string",   "required": true },
+        "featured":    { "type": "boolean",  "default": false }
       }
     },
     "post": {
       "label": "Article",
       "dir": "source/_posts",
       "fields": {
-        "title": { "type": "string", "required": true },
-        "date": { "type": "datetime", "required": true },
-        "tags": { "type": "string[]", "required": false },
-        "categories": { "type": "string[]", "required": false },
-        "cover": { "type": "string", "required": false },
-        "excerpt": { "type": "string", "required": false },
-        "draft": { "type": "boolean", "default": false }
-      }
-    },
-    "about": {
-      "label": "About",
-      "dir": "source/_about",
-      "fields": {
-        "title": { "type": "string", "required": true },
-        "date": { "type": "date", "required": false },
-        "nav": { "type": "boolean", "default": true },
-        "nav_title": { "type": "string", "required": false },
-        "nav_order": { "type": "number", "default": 99 }
+        "title":       { "type": "string",   "required": true },
+        "date":        { "type": "datetime", "required": true },
+        "tags":        { "type": "string[]", "required": false },
+        "categories":  { "type": "string[]", "required": false },
+        "cover":       { "type": "string",   "required": false },
+        "excerpt":     { "type": "string",   "required": false },
+        "draft":       { "type": "boolean",  "default": false }
       }
     }
   },
-  "nav_order": ["project", "post", "about"]
+  "nav_order": ["post", "project"]
 }
 ```
 
-> Notes:
-> - Template selection is declared by `template-manifest.json` `templates[]` (see `prompts/template-manifest-generation.md`).
-> - Pagination is declared by `manifest.collections[].pagination`.
-> - Singleton pages are expressed by `manifest.collections[].singleton: true`.
+> **Note on v2 alignment.** Each `types.<name>.dir` corresponds to a markdown source in `template-manifest.json`:
+>
+> ```json
+> "sources": {
+>   "projects": { "type": "markdown", "dir": "source/_projects", "sort": { "field": "date", "order": "desc" } },
+>   "posts":    { "type": "markdown", "dir": "source/_posts",    "sort": { "field": "date", "order": "desc" } }
+> }
+> ```
+>
+> The two files are kept in sync by the pipeline-generation flow. `render.js` does **not** read `content-types.json` to find content; it reads `template-manifest.json`'s sources. `content-types.json` is used by the AI for authoring guidance and (optionally) by the markdown adapter to validate front-matter.
+
+---
 
 ## Field Type Validation Rules
 
@@ -162,15 +170,21 @@ Output `content-types.json`:
 | `number` | number | `42` |
 | `object` | any JSON object | `{"key": "value"}` |
 
+---
+
 ## Post-Generation Actions
 
 1. Write `<SITE_ROOT>/.xiaoyi-ssg/content-types.json`.
-2. Trigger `template-manifest.json` to sync update (if a content type is added, the corresponding collection must be added; templates expand per user intent).
-3. Create `source/_<type>/` directory.
-4. Trigger `REGENERATE_PIPELINE` to regenerate the matching templates and manifest.
+2. Trigger `template-manifest.json` v2 sync: add the corresponding markdown `source` entry; add/refresh the matching `view` entries.
+3. Create `source/_<type>/` directory if it does not already exist.
+4. Trigger `REGENERATE_PIPELINE` to regenerate the matching sources, views, and templates.
+
+---
 
 ## Hint to AI
 
-> You are a content modeler. Guide the user in defining the **minimum necessary fields**; avoid over-engineering. Each field must have a clear purpose (template rendering, SEO, filtering, display). When the user is unsure, give standard recommendations for that type. The generated JSON must pass `schemas/config.schema.json` validation.
->
-> **Key principle**: `content-types.json` only defines the **data structure** (content sources, fields, types), **not rendering** (list / detail / pagination, etc.). All rendering is expressed by `template-manifest.json`.
+> Markdown content modeling is now a subset of source modeling, not the whole game.
+> 1. First ask whether the content is local markdown at all. If the user wants an API, a JSON file, a feed, or aggregated data — go straight to `data-sources.md`.
+> 2. For markdown sources, define the **minimum necessary** fields; each must have a clear purpose (template rendering, SEO, filtering, display).
+> 3. When the user is unsure, give standard recommendations for that type.
+> 4. Pagination, layout, and how the source is displayed are **view-level** decisions, not content-type-level.
