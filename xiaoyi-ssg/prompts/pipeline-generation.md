@@ -2,7 +2,7 @@
 
 > Required pre-reading:
 > 1. [`templates/conventions.md`](../templates/conventions.md) — template syntax, variable binding, custom field conventions
-> 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — v2 engine: `loadSources` + `expandViews`
+> 2. [`prompts/render-node-spec.md`](./render-node-spec.md) — v1 engine: `loadSources` + `expandViews`
 > 3. [`prompts/data-sources.md`](./data-sources.md) — Source Adapters (markdown / http / json / csv / rss / inline / derived), security, cache, fallback
 > 4. [`prompts/template-manifest-generation.md`](./template-manifest-generation.md) — `sources + views` manifest patterns
 > 5. [`SKILL.md` § Design System Delegation](../SKILL.md) — design source delegation rules (CSS must not be invented)
@@ -54,7 +54,7 @@ Generate the full `<PIPELINE_DIR>/` file set in one pass:
 
 ```text
 .xiaoyi-ssg/
-├── render.js                 # core render script (v2: loadSources + expandViews)
+├── render.js                 # core render script (v1: loadSources + expandViews)
 ├── dev.js                    # dev server (watch + serve + live reload)
 ├── package.json              # dependency declaration
 ├── package-lock.json         # lock file
@@ -78,7 +78,7 @@ Generate the full `<PIPELINE_DIR>/` file set in one pass:
 │   └── data/                 # optional static JSON data (build-time; secrets NEVER here)
 ├── .cache/                   # remote source snapshots (git-ignored, .gitignore the path)
 │   └── sources/              # one JSON file per cache key
-├── template-manifest.json    # v2 single source of truth: sources + views
+├── template-manifest.json    # current single source of truth: sources + views
 ├── config.schema.json        # config validation schema
 ├── content-types.json        # front-matter schema for markdown sources (renderer validates only)
 ├── interactions.manifest.json # interaction contract, deps, fallbacks, verification
@@ -119,19 +119,19 @@ Generate the full `<PIPELINE_DIR>/` file set in one pass:
 
 Use the four default dependencies above. If the user explicitly needs charts, maps, full-text search, or similar complex interactions, additional pinned npm dependencies may be added. Pin versions, avoid CDN-only, and document purpose + fallback in `interactions.manifest.json`.
 
-### 2. render.js — Core Render Script (v2: Source + View Engine)
+### 2. render.js — Core Render Script (v1: Source + View Engine)
 
 - Single file, Node.js 18+, ESM (`import`).
 - Dependencies: `js-yaml` (YAML), `marked` (Markdown → HTML), `eta` (templates). Source Adapters under `.xiaoyi-ssg/sources/*.js` use **only built-in `fetch`** — no extra runtime deps for `http` / `json` / `csv` / `rss` / `derived`.
 - Core flow (replaces the v1 `scanCollections + expandTemplates` two-step):
-  1. Read `template-manifest.json` (v2 single source of truth).
+  1. Read `template-manifest.json` (current single source of truth).
   2. `loadSources(manifest.sources)`: dispatch to Source Adapters (markdown / http / json / csv / rss / inline / derived) in topological order. Output: `datasets = { [name]: Item[] }`, source-type agnostic.
   3. `expandViews(manifest.views, datasets)`: one unified expander handling `for.each` / `for.paginate` / `use` / single page. Source-type agnostic.
   4. Iterate tasks → render → write to `public/`.
   5. Copy assets, generate interaction data, feed, sitemap, 404, GEO outputs.
   6. Incremental cache: hash includes templates, manifest, tokens, config key fields, interactions manifest, source items (for API/derived the item JSON participates; for markdown the source file path).
 - **Security self-test** runs after build: every `auth.env` is resolved via `process.env` and grepped against `public/` — fail hard if any value leaks.
-- See `prompts/render-node-spec.md` (v2).
+- See `prompts/render-node-spec.md` (current v1).
 
 ### 3. dev.js — Dev Server
 
@@ -153,9 +153,9 @@ Use the four default dependencies above. If the user explicitly needs charts, ma
 - `templates[]`: each template's name, type, layout, file name, output path template, data binding, expansion strategy.
 - `globals`: globally injected data.
 
-AI decision rules (v2: data origin first, then views over those sources):
+AI decision rules (v1: data origin first, then views over those sources):
 
-| User intent | Manifest key points (v2) |
+| User intent | Manifest key points (current v1) |
 |-------------|--------------------------|
 | "Landing page, only homepage" | markdown `source.landing` + view `landing` (output="/") + view `404` |
 | "Blog / portfolio (markdown)" | markdown `sources.posts` / `sources.projects` + `for.each` (detail) + `for.paginate` (list) views |
@@ -398,6 +398,6 @@ Full spec: see [`prompts/geo-conventions.md`](./geo-conventions.md). Source disc
    - style/script `.xiaoyi-ssg/assets/style.css`, `.xiaoyi-ssg/assets/script.js`
 5. **dev server injection**: only dev mode injects the SSE script; build output does not.
 6. **ESM modules**: all `.js` files use `import`/`export`; `package.json` has `"type": "module"`.
-7. **No hardcoded site shape**: `render.js` is fully driven by `template-manifest.json` v2. There is no `collections` / `forEach` enum / list-vs-detail branch in the engine — those decisions live in the manifest.
+7. **No hardcoded site shape**: `render.js` is fully driven by `template-manifest.json` v1. There is no `collections` / `forEach` enum / list-vs-detail branch in the engine — those decisions live in the manifest.
 8. **Open data layer**: adding a new data origin means adding one Source Adapter file under `.xiaoyi-ssg/sources/<type>.js` and registering the `type` in `schemas/source.schema.json`. The engine main loop does not change.
 9. **Build-time fetch only; secrets from `process.env` only; secrets never in `public/` or snapshots.** Enforced by `assertNoSecretsInOutput` after build. Fail hard on leak.

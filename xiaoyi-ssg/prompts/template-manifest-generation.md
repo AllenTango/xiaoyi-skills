@@ -1,6 +1,6 @@
-# Site Manifest Generation (v2)
+# Site Manifest Generation (current v1)
 
-This prompt guides the AI in producing `.xiaoyi-ssg/template-manifest.json` from the user's intent. The manifest conforms to `schemas/template-manifest.json` (v2) and is the **only** structural declaration the engine reads.
+This prompt guides the AI in producing `.xiaoyi-ssg/template-manifest.json` from the user's intent. The manifest conforms to `schemas/template-manifest.json` (current v1) and is the **only** structural declaration the engine reads.
 
 > **Core principle**: the engine does not know site types. There is no "blog mode / docs mode / landing mode" baked in. The AI assembles a manifest from two open abstractions:
 > - **`sources`** — where the data lives (markdown / http / json / csv / rss / inline / derived). See [`data-sources.md`](./data-sources.md).
@@ -16,7 +16,7 @@ See `schemas/template-manifest.json`:
 
 ```typescript
 {
-  version: 2,                                  // const 2 — no v1 compatibility
+  version: 1,                                  // const 1 — current v1 manifest shape
   sources: {
     [name: string]: SourceDef                  // see schemas/source.schema.json
   },
@@ -131,7 +131,7 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "landing": { "type": "markdown", "dir": "source/_landing" }
   },
@@ -147,7 +147,7 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
     "projects": { "type": "markdown", "dir": "source/_projects", "sort": { "field": "date", "order": "desc" } }
@@ -167,7 +167,7 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "docs": { "type": "markdown", "dir": "source/_docs", "sort": { "field": "nav_order", "order": "asc" }, "tree": true }
   },
@@ -188,7 +188,7 @@ A user wants a product catalog pulled from an API, with tag aggregation pages. T
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "products": {
       "type": "http",
@@ -222,7 +222,7 @@ A user wants a product catalog pulled from an API, with tag aggregation pages. T
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "posts":      { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
     "github":     { "type": "http", "url": "https://api.github.com/users/me/repos",
@@ -254,7 +254,7 @@ Same as A–E with `lang: ["zh", "en"]` on each page view and `{lang}` in `outpu
 
 The AI must self-verify before writing the file:
 
-- [ ] `version: 2`.
+- [ ] `version: 1`.
 - [ ] At least one source and one view.
 - [ ] At least one layout view exists.
 - [ ] Every `type=page` view references an existing layout name.

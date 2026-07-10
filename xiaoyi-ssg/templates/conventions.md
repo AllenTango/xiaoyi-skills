@@ -163,7 +163,7 @@ Templates read these via the standard `item.*` access (frontmatter is flattened 
 
 ## 5. Required template files
 
-A complete pipeline must define these in `template-manifest.json` (v2):
+A complete pipeline must define these in `template-manifest.json` (current v1):
 
 | Template name | Purpose                                  | Output path             | Notes                                |
 | ------------- | ---------------------------------------- | ----------------------- | ------------------------------------ |
@@ -221,7 +221,7 @@ For GEO-specific smoke tests (always add these):
 - ❌ Hardcoding a source name in `render.js` (e.g. `datasets.posts`, `collections.post`) — breaks any other source name. Iterate `Object.keys(datasets)` / `Object.values(datasets).flatMap(...)` instead.
 - ❌ Hardcoding `contentTypes.types[name]` in `render.js` for rendering — render.js reads `template-manifest.json` sources, not content-types.json. The latter is for AI authoring guidance and optional markdown front-matter validation.
 - ❌ Setting `<% const it = data %>` then using `it.customFields.xxx` in a loop — verbose and brittle; flatten custom fields at adapter normalization time instead (see §3.2)
-- ❌ Inventing v1-shaped `collections` or `forEach: items/collections/pagination` in the engine — the v2 model is `sources + views` only. There is no shim.
+- ❌ Inventing legacy collection-style `collections` or `forEach: items/collections/pagination` in the engine — the current v1 model is `sources + views`.
 
 ---
 

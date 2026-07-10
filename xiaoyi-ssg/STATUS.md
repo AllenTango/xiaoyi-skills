@@ -6,9 +6,9 @@ last_updated: 2026-07-09
 reviewed: false
 tested: true
 ---
-# xiaoyi-ssg — 对话式静态站生成器
+# xiaoyi-ssg — 对话式站点交付技能
 
-对话式静态站生成器。AI 通过 /xiaoyi-ssg 命令引导用户设计内容模型与设计 token，生成自管 pipeline。
+对话式站点交付技能。AI 通过 /xiaoyi-ssg 命令引导用户设计内容模型与设计 token，生成项目本地的内容、设计、渲染、预览与发布管线；静态托管兼容产物是输出能力，不是产品定位。
 
 ## 当前进展
 
@@ -20,9 +20,9 @@ tested: true
 - [x] 发现并修复 9 个 bug（v1.0.0 阶段）
 - [x] v1.0.0 后扩展：TAKE_OVER_EXISTING 拆分为三个子流程
   - Sub-flow A：xiaoyi-ssg → xiaoyi-ssg（已存在项目合并）
-  - Sub-flow B：其他静态站 → xiaoyi-ssg（Hugo/Jekyll/Hexo/Eleventy/Astro/Next 静态导出/纯 HTML 等任意静态站迁入）
-  - Sub-flow C：未知 / 非静态站目录（必须先向用户确认）
-- [x] v1.0.0 后扩展：site-root 标记由“枚举生成器”改为“通用规则”，不再因未知生成器而漏判
+  - Sub-flow B：其他站点 / 静态导出项目 → xiaoyi-ssg（Hugo/Jekyll/Hexo/Eleventy/Astro/Next 静态导出/纯 HTML 等任意站点项目迁入）
+  - Sub-flow C：未知 / 非站点目录（必须先向用户确认）
+- [x] v1.0.0 后扩展：site-root 标记由“枚举工具”改为“通用规则”，不再因未知工具而漏判
 - [x] v1.0.0 后扩展：dev.js 强制端口自动递增、CSS 路径契约、示例 + README、交互语言分离规则
 - [x] templates/conventions.md（强制 Eta 语法 / 变量绑定）
 - [x] 5 步必做自测条款
@@ -36,6 +36,7 @@ tested: true
 - [x] 删除冗余 README.md
 - [x] 项目管理文档 STATUS.md 保留简体中文
 - [x] GEO 支持（默认开启）：用户现有 `source/_<type>/*.md` 即 GEO 来源，render.js 自动聚合为 `/llms.txt`、`/robots.txt`、每页 markdown 镜像、JSON-LD；`llms-full.txt` opt-in
+- [x] v1 开发范围澄清：sources + views、数据源扩展、取消旧定位等调整均属于 v1 范围，不代表大版本或 breaking release
 - [ ] 等待社区 review + 合并
 
 ## 已知约束

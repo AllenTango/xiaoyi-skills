@@ -1,8 +1,8 @@
-# render.js / dev.js Spec (v2 — Source + View Engine)
+# render.js / dev.js Spec (v1 — Source + View Engine)
 
 This document defines the full spec of the Node.js scripts the AI produces for the rendering pipeline. The AI writes code per this spec into the user project's `.xiaoyi-ssg/`.
 
-> **v2 engine model.** The engine knows nothing about blogs, docs, or landing pages. It knows only two open abstractions:
+> **v1 source + view model.** The engine knows nothing about blogs, docs, or landing pages. It knows only two open abstractions:
 > - **`sources`** — where data comes from (local markdown, build-time API fetch, JSON/CSV files, RSS, inline, or derived). Resolved by pluggable **Source Adapters** (see [`data-sources.md`](./data-sources.md)).
 > - **`views`** — how pages are generated (per-item, paginated, multi-source aggregate, or single computed page).
 >
@@ -36,11 +36,11 @@ This document defines the full spec of the Node.js scripts the AI produces for t
 
 ### `template-manifest.json` (single source of truth)
 
-Conforms to `schemas/template-manifest.json` (v2). Two top-level arrays/objects:
+Conforms to `schemas/template-manifest.json` (current v1). Two top-level arrays/objects:
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sources": {
     "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
     "products": { "type": "http", "url": "https://api.example.com/products",
@@ -84,7 +84,7 @@ Conforms to `schemas/template-manifest.json` (v2). Two top-level arrays/objects:
 
 ```javascript
 export async function build(fresh = false) {
-  const manifest      = loadManifest();          // validate against schema v2
+  const manifest      = loadManifest();          // validate against schema v1
   const config        = loadConfig();
   const tokens        = loadTokens();
   const contentTypes  = loadContentTypes();       // still used to validate markdown front-matter
@@ -393,7 +393,7 @@ The GEO function bodies are unchanged from prior spec except they iterate `datas
 `.xiaoyi-ssg-cache.json`:
 
 ```json
-{ "version": 2, "outputs": { "/blog/page/1/": { "hash": "sha256...", "inputs": ["template-manifest.json", "list.html", "base.html"] } } }
+{ "version": 1, "outputs": { "/blog/page/1/": { "hash": "sha256...", "inputs": ["template-manifest.json", "list.html", "base.html"] } } }
 ```
 
 Source snapshots live separately under `.xiaoyi-ssg/.cache/sources/<key>.json` (git-ignored). See [`data-sources.md`](./data-sources.md) § Snapshot Cache.
@@ -404,7 +404,7 @@ Source snapshots live separately under `.xiaoyi-ssg/.cache/sources/<key>.json` (
 
 ```javascript
 /**
- * xiaoyi-ssg rendering pipeline (v2 — source + view engine)
+ * xiaoyi-ssg rendering pipeline (v1 — source + view engine)
  * Regenerate via: /xiaoyi-ssg → adjust sources/views/style → regenerate pipeline
  * Generated at: {{GENERATED_AT}}
  * Manifest hash: {{MANIFEST_HASH}}  Tokens: {{TOKENS_HASH}}  Content-Types: {{CONTENT_TYPES_HASH}}
@@ -425,6 +425,6 @@ Source snapshots live separately under `.xiaoyi-ssg/.cache/sources/<key>.json` (
 8. **Dev SSE injection** — dev only.
 9. **Port auto-increment** — mandatory in `dev.js`.
 10. **Debounce** — 300ms + build lock.
-11. **Runtime validation** — manifest (v2), config, tokens, content-types validated at startup.
+11. **Runtime validation** — manifest (current v1), config, tokens, content-types validated at startup.
 12. **Unknown source/view type → explicit error** naming the missing adapter or invalid field. No silent fallback, no markdown assumption.
 13. **Build-time fetch only; secrets from `process.env`, never written to any artifact.** Enforced by `assertNoSecretsInOutput`.

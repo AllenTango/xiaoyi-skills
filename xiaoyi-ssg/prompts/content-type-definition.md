@@ -1,8 +1,8 @@
 # Markdown Source Field Modeling
 
-This prompt covers one specific data origin: **local markdown sources**. In v2, markdown is one of seven Source Adapters, not the center of the engine. Use this file when the user is authoring content that lives as `source/_<type>/*.md`. For other data origins, see [`data-sources.md`](./data-sources.md).
+This prompt covers one specific data origin: **local markdown sources**. In v1, markdown is one of seven Source Adapters, not the center of the engine. Use this file when the user is authoring content that lives as `source/_<type>/*.md`. For other data origins, see [`data-sources.md`](./data-sources.md).
 
-> **v2 shift.** Content modeling is now narrower than before: it only describes the front-matter fields of a markdown source (validation, defaults, display hints). The engine itself no longer has "content types" as a first-class concept; pages are described by `views` over `sources`. The `content-types.json` file still exists for front-matter validation and AI-driven content authoring, but `render.js` reads sources, not content types, for rendering.
+> **v1 shift.** Content modeling is now narrower than before: it only describes the front-matter fields of a markdown source (validation, defaults, display hints). The engine itself no longer has "content types" as a first-class concept; pages are described by `views` over `sources`. The `content-types.json` file still exists for front-matter validation and AI-driven content authoring, but `render.js` reads sources, not content types, for rendering.
 
 ---
 
@@ -16,7 +16,7 @@ User: "posts under source/_posts, fields: title, date, tags, cover, excerpt, dra
 AI: Generate / update content-types.json
 AI: "Confirm? If yes, the matching sources + views will be generated in template-manifest.json."
 User: "Confirmed"
-AI: Regenerate pipeline (manifest v2)
+AI: Regenerate pipeline (current manifest)
 ```
 
 For each markdown source, ask in this order:
@@ -78,7 +78,7 @@ Do you need relationship fields?
 
 ### 4. Pagination / Layout (a view concern, not a content-type concern)
 
-In v2, page layout (grid/list/masonry) and pagination per-page count live in the **view** declaration, not in the content type. Ask:
+In v1, page layout (grid/list/masonry) and pagination per-page count live in the **view** declaration, not in the content type. Ask:
 
 ```
 AI: "List view layout preference? (grid / list / masonry, default grid)"
@@ -144,7 +144,7 @@ Output `content-types.json`:
 }
 ```
 
-> **Note on v2 alignment.** Each `types.<name>.dir` corresponds to a markdown source in `template-manifest.json`:
+> **Note on v1 alignment.** Each `types.<name>.dir` corresponds to a markdown source in `template-manifest.json`:
 >
 > ```json
 > "sources": {
@@ -175,7 +175,7 @@ Output `content-types.json`:
 ## Post-Generation Actions
 
 1. Write `<SITE_ROOT>/.xiaoyi-ssg/content-types.json`.
-2. Trigger `template-manifest.json` v2 sync: add the corresponding markdown `source` entry; add/refresh the matching `view` entries.
+2. Trigger `template-manifest.json` v1 sync: add the corresponding markdown `source` entry; add/refresh the matching `view` entries.
 3. Create `source/_<type>/` directory if it does not already exist.
 4. Trigger `REGENERATE_PIPELINE` to regenerate the matching sources, views, and templates.
 

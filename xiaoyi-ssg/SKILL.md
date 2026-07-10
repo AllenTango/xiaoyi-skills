@@ -1,14 +1,14 @@
 ---
 name: xiaoyi-ssg
 version: 1.0.0
-description: 仅在用户显式调用 /xiaoyi-ssg、提及 xiaoyi-ssg、或要求创建/维护 xiaoyi 静态站项目时使用。生成并维护项目专属的静态站渲染管线，含内容模型、设计 token、可访问 UI，以及兼容静态托管的浏览器交互（导航、搜索、筛选、主题切换、表单、画廊、媒体控件、图表、地图等）。
+description: 仅在用户显式调用 /xiaoyi-ssg、提及 xiaoyi-ssg、或要求创建/维护 xiaoyi 站点交付项目时使用。生成并维护项目本地的内容、设计、渲染、预览与发布管线，含内容模型、设计 token、可访问 UI，以及兼容静态托管的浏览器交互（导航、搜索、筛选、主题切换、表单、画廊、媒体控件、图表、地图等）。
 required_skills:
   - id: frontend-design
 ---
 
 # xiaoyi-ssg
 
-Lightweight router for a generated static site pipeline. Keep this file in context; load detailed prompt files only when the matching task requires them.
+Lightweight router for a generated site delivery pipeline. Keep this file in context; load detailed prompt files only when the matching task requires them.
 
 ## Required Dependencies
 
@@ -40,18 +40,18 @@ The skill content is independent of any specific AI client. Clients are assumed 
 
 ## Required Reading — Pipeline Generation Constraints
 
-> Mandatory: before writing any `render.js` / `dev.js` / Eta template, the AI must read these files. Skipping them produces broken output. These are hard rules derived from v1.0.0 testing plus the v2 engine model.
+> Mandatory: before writing any `render.js` / `dev.js` / Eta template, the AI must read these files. Skipping them produces broken output. These are hard rules derived from v1.0.0 testing plus the v1 source + view model.
 
 | File | Reason |
 |------|--------|
 | [`templates/conventions.md`](./templates/conventions.md) | Eta syntax (`<%~ body %>` not `<%-`), variable binding (top-level not `it.`), custom field flattening, 5-step self-test. |
-| [`prompts/render-node-spec.md`](./prompts/render-node-spec.md) | v2 engine: `loadSources` + `expandViews`, mandatory self-test, port auto-increment. |
+| [`prompts/render-node-spec.md`](./prompts/render-node-spec.md) | v1 engine: `loadSources` + `expandViews`, mandatory self-test, port auto-increment. |
 | [`prompts/data-sources.md`](./prompts/data-sources.md) | Source Adapters: markdown / http / json / csv / rss / inline / derived. Secrets only from `process.env`, never to `public/`. Cache + fallback. |
 | [`prompts/pipeline-generation.md`](./prompts/pipeline-generation.md) | Full pipeline generation guide, `package.json` dependencies, sources/ directory layout. |
 | [`prompts/design-system-extraction.md`](./prompts/design-system-extraction.md) | Rules for normalizing `frontend-design` content into xiaoyi tokens. |
-| [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md) | v2 manifest: `sources + views` patterns, open-ended assembly. |
+| [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md) | current manifest: `sources + views` patterns, open-ended assembly. |
 | [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) | GEO source discipline (markdown sources = source), llms.txt / robots.txt / JSON-LD / md mirror specs. |
-| [`schemas/template-manifest.json`](./schemas/template-manifest.json) | v2 manifest JSON Schema (sources + views). |
+| [`schemas/template-manifest.json`](./schemas/template-manifest.json) | current manifest JSON Schema (sources + views). |
 | [`schemas/source.schema.json`](./schemas/source.schema.json) | Source Adapter definition JSON Schema. |
 
 ## First Rules
@@ -96,7 +96,7 @@ Generated sites should follow this layout:
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── node_modules/
-│   ├── render.js           # v2 engine: loadSources + expandViews
+│   ├── render.js           # v1 engine: loadSources + expandViews
 │   ├── dev.js              # dev server (manifest + adapter watching)
 │   ├── sources/            # Source Adapters (markdown/http/json/csv/rss/inline/derived)
 │   ├── templates/          # declared by template-manifest.json
@@ -107,7 +107,7 @@ Generated sites should follow this layout:
 │   │   └── data/
 │   ├── .cache/             # remote source snapshots (git-ignored)
 │   │   └── sources/
-│   ├── template-manifest.json   # v2 single source of truth: sources + views
+│   ├── template-manifest.json   # current single source of truth: sources + views
 │   ├── content-types.json       # markdown front-matter schema (render.js does not read this)
 │   ├── interactions.manifest.json
 │   └── pipeline-manifest.json
@@ -133,9 +133,9 @@ Every generated site ships with GEO-ready artifacts, derived from the user's exi
 
 See [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) for the full spec (output formats, schema mapping, cache participation, common pitfalls).
 
-## v2 Engine Model (Source + View)
+## v1 Source + View Model
 
-> The v2 engine is structurally open. There is no "blog mode" / "docs mode" / "landing mode" baked in.
+> The v1 engine is structurally open. There is no "blog mode" / "docs mode" / "landing mode" baked in.
 
 A site is described by two orthogonal, open abstractions:
 
@@ -145,7 +145,7 @@ A site is described by two orthogonal, open abstractions:
   - `for.paginate: <source>` → one page per pagination slice (list, archive, paginated API, ...).
   - `for` omitted → single page (home, 404, computed). May pull data from multiple sources via `use: [...]`.
 
-Concretely, this removes three v1 limitations at once:
+Concretely, this removes three earlier collection-style limitations at once:
 
 - **API-backed apps are first-class**: `{ type: "http", url, auth: { env } }` is a source like any other; products / GitHub repos / Notion pages / RSS feeds all render through the same `for.each` mechanism as markdown posts.
 - **Aggregation / taxonomy pages are first-class**: a `derived` source of `op: "groupBy"` produces one item per distinct tag/category/author, and a `for.each` view over it emits one `/tag/{field}/` page per group.
@@ -153,7 +153,7 @@ Concretely, this removes three v1 limitations at once:
 
 Full contract: [`prompts/data-sources.md`](./prompts/data-sources.md), [`prompts/template-manifest-generation.md`](./prompts/template-manifest-generation.md), [`prompts/render-node-spec.md`](./prompts/render-node-spec.md).
 
-**v1 → v2 is a breaking change.** There is no compatibility shim. Manifests from v1 must be rewritten in the `sources + views` form. The user owns the version bump decision; the AI only proposes.
+The current v1 development branch uses the `sources + views` form. Older collection-style drafts should be migrated deliberately; this remains within the v1 scope and does not imply a version bump.
 
 ## Intent Routing
 
@@ -214,7 +214,7 @@ After changing this skill:
 npx skills add /absolute/path/to/xiaoyi-skills --list
 ```
 
-## Common Pitfalls (v2 — learned from real tests)
+## Common Pitfalls (v1 — learned from real tests)
 
 When a generated pipeline renders empty pages, leaks secrets, or fails expansion, check these first.
 

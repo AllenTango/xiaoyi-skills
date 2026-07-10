@@ -2,7 +2,7 @@
 
 > 当前版本：v1.0.0  
 > 最后更新：2026-07-10  
-> 当前主干：v2 引擎（sources + views 模型），源码侧尚未发版
+> 当前主干：v1 开发态（sources + views 模型）
 
 本文件用于开发/维护 `xiaoyi-ssg` skill（位于 `<SKILL_DIR>`）时的 AI 协作约定。**它不是生成站点的指导**（生成站点的指导在生成的渲染管线中）。
 
@@ -19,9 +19,9 @@
   - During testing (no temporary bumps even with "I will restore it later" intent)
   - After a large refactor
   - When the AI feels the change is "big enough to deserve a major version"
-  - When aligning with the user's "should be v2" hint in casual conversation
+  - When aligning with the user's "should be a major version" hint in casual conversation
 - **The AI's role on version questions is advisory only**: it may surface "this change might warrant a version bump" as a suggestion, then wait for the user's explicit instruction.
-- If the user explicitly requests a version bump (e.g., "bump to v1.1.0", "release v2"), follow this flow:
+- If the user explicitly requests a version bump (e.g., "bump to v1.1.0", "release a major version"), follow this flow:
   1. Append a changelog entry to STATUS.md (date, reason, impact scope).
   2. Update SKILL.md frontmatter, AGENTS.md "Current Version" header, and any other version cross-references in lockstep.
   3. Run the full test suite and confirm it still passes.
@@ -87,11 +87,11 @@ The above rule controls **files written by the AI**. A separate rule governs
 - **`source/_<type>/*.md` frontmatter may need GEO extensions** (`summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai`) — but these are optional. When absent, `render.js` must auto-derive (`summary` from first paragraph) rather than emit empty values.
 - **`source/_<type>/*.md` content itself is read directly for the markdown mirror**, not the rendered `body_html`. The mirror writes the raw markdown body with frontmatter stripped.
 
-### 6. v2 Engine Model & Build-time Security
+### 6. v1 Source + View Model & Build-time Security
 
-The v2 engine is described in detail in `SKILL.md` § v2 Engine Model and `prompts/data-sources.md` / `prompts/render-node-spec.md`. The following are mandatory invariants for any modification of this skill.
+The v1 engine is described in detail in `SKILL.md` § v1 Source + View Model and `prompts/data-sources.md` / `prompts/render-node-spec.md`. The following are mandatory invariants for any modification of this skill.
 
-- **No v1 shim.** There is no compatibility layer with the v1 `collections` / `forEach` manifest model. v1 manifests must be rewritten in the v2 `sources + views` form. Do not reintroduce a shim "for safety"; it would re-add the rigidity v2 was created to remove.
+- **Current manifest only.** The v1 development branch uses the `sources + views` form. Older collection-style drafts must be migrated deliberately; do not add a silent compatibility shim that hides schema drift.
 - **Open data layer.** A site is data + pages. New data origins are added by writing one Source Adapter under `.xiaoyi-ssg/sources/<type>.js` and registering the `type` in `schemas/source.schema.json`. The engine main loop is not modified. Do not encode site shapes ("blog mode", "shop mode") into the engine; describe them as manifest combinations.
 - **Source-type agnostic engine.** `loadSources` dispatches on `source.type`. `expandViews` is driven by `for.each` / `for.paginate` / `use` / single-page — no source name is hardcoded. The engine throws on unknown source `type` (naming the missing adapter file) and on unknown `for.*` source reference. Do not add silent fallbacks to markdown for unknown types.
 - **Build-time fetch only.** The browser never talks to an authed API. All fetches happen in `render.js`. Adapters use Node 18 built-in `fetch` with `AbortSignal.timeout`. No CDN-only deps for fetches.
@@ -106,12 +106,12 @@ The v2 engine is described in detail in `SKILL.md` § v2 Engine Model and `promp
 
 - **`<SKILL_DIR>`**: absolute path of this skill's own directory; varies by install location. Use this placeholder throughout this document for any reference to the skill's own files.
 - **`<SITE_ROOT>`**: the site root the user is currently operating on. **Not inside `<SKILL_DIR>`**. The AI locates it per session by walking up from the current working directory. The first directory containing a recognized site marker becomes `<SITE_ROOT>`. If none is found, the cwd itself is the candidate root (init may still proceed).
-- **Site-root markers** (a project of *any* static-site kind matches here — the list is intentionally not enumerated by generator name):
+- **Site-root markers** (a project of *any* site or static-export kind matches here — the list is intentionally not enumerated by generator name):
   1. `config.yml` + sibling `.xiaoyi-ssg/` → existing xiaoyi-ssg project.
   2. Any other YAML/JSON/TOML file at the root whose filename or top-level keys indicate it is a site configuration (`hugo.toml`, `_config.yml`, `pelicanconf.py`, `eleventy.config.js`, `astro.config.*`, etc.). Detection rule: a recognized root-level config file in a well-known convention (leading underscore, known generator name, or a top-level key such as `baseURL` / `title` / `params` / `output: export` / `site`).
-  3. `package.json` with a known static-site generator dependency (`hexo`, `@11ty/eleventy`, `astro`, `next` with `output: "export"`, `gatsby`, `vuepress`, etc.).
+  3. `package.json` with a known site tool or static-export dependency (`hexo`, `@11ty/eleventy`, `astro`, `next` with `output: "export"`, `gatsby`, `vuepress`, etc.).
   4. `index.html` / `index.htm` at the root plus one of: a `public/`, `dist/`, `_site/`, `output/` directory containing generated HTML, OR a sibling content directory such as `content/`, `posts/`, `pages/`, `src/`.
-- **Hard principle**: the marker rules are *examples*, not an exhaustive allow-list. If the AI sees an unknown but obvious site configuration file at the root of a directory the user pointed at, treat that directory as `<SITE_ROOT>` and proceed. If the AI is unsure whether a directory is actually a static site project, ask the user before assuming.
+- **Hard principle**: the marker rules are *examples*, not an exhaustive allow-list. If the AI sees an unknown but obvious site configuration file at the root of a directory the user pointed at, treat that directory as `<SITE_ROOT>` and proceed. If the AI is unsure whether a directory is actually a site project, ask the user before assuming.
 - **`<PIPELINE_DIR>`**: `<SITE_ROOT>/.xiaoyi-ssg/` — the generated rendering pipeline directory.
 
 ---
@@ -154,18 +154,18 @@ See [`SKILL.md` § Required Dependencies](./SKILL.md).
 
 | File | Responsibility | Modification trigger |
 |------|----------------|----------------------|
-| `SKILL.md` | Skill definition, frontmatter, workflow, interaction contract, v2 engine summary, security hard rules | Interaction flow / capability / model change |
-| `AGENTS.md` | This file: AI collaboration conventions for development (v2 invariants, orchestration logic) | Development convention / model / orchestration change |
+| `SKILL.md` | Skill definition, frontmatter, workflow, interaction contract, v1 engine summary, security hard rules | Interaction flow / capability / model change |
+| `AGENTS.md` | This file: AI collaboration conventions for development (v1 invariants, orchestration logic) | Development convention / model / orchestration change |
 | `prompts/pipeline-generation.md` | Guide AI in generating the full rendering pipeline (sources/ dir, security self-test) | Pipeline structure / template strategy / CSS strategy change |
-| `prompts/data-sources.md` | v2 Source Adapter contract: kinds (markdown / http / json / csv / rss / inline / derived), security, cache, fallback | New adapter kind / security rule / cache strategy change |
+| `prompts/data-sources.md` | v1 Source Adapter contract: kinds (markdown / http / json / csv / rss / inline / derived), security, cache, fallback | New adapter kind / security rule / cache strategy change |
 | `prompts/content-type-definition.md` | Guide AI in defining markdown front-matter schemas with the user | Markdown content type flow / field types change |
 | `prompts/design-system-extraction.md` | Guide AI in normalizing `frontend-design` content into xiaoyi tokens | Token schema / normalization strategy change |
-| `prompts/render-node-spec.md` | v2 engine spec: `loadSources` + `expandViews`, hash cache, port auto-increment | Renderer structure / algorithm change |
-| `prompts/template-manifest-generation.md` | Guide AI in generating `template-manifest.json` v2 (sources + views) | Manifest structure / pattern examples change |
+| `prompts/render-node-spec.md` | v1 engine spec: `loadSources` + `expandViews`, hash cache, port auto-increment | Renderer structure / algorithm change |
+| `prompts/template-manifest-generation.md` | Guide AI in generating `template-manifest.json` v1 (sources + views) | Manifest structure / pattern examples change |
 | `templates/conventions.md` | Eta template syntax, variable binding, custom fields mandatory rules | Template engine constraint change |
 | `schemas/design-tokens.json` | design-tokens JSON Schema (for validation) | Token field add/remove |
 | `schemas/config.schema.json` | config.yml validation schema | Site config field add/remove |
-| `schemas/template-manifest.json` | v2 manifest JSON Schema (sources + views) | Manifest structure change |
+| `schemas/template-manifest.json` | current manifest JSON Schema (sources + views) | Manifest structure change |
 | `schemas/source.schema.json` | Source Adapter definition JSON Schema | New adapter kind / source field change |
 
 > Note: `references/frontend-design-integration.md` was merged into `SKILL.md` § Design System Delegation and then deleted.
@@ -184,15 +184,14 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
    - Walk up from cwd and look for any recognized site-root marker
      (see "Site-root markers" near the top of this file).
    - Match found → <SITE_ROOT> = that directory; record which marker
-     matched and whether it is xiaoyi-ssg or another static site
-     generator.
+     matched and whether it is xiaoyi-ssg or another site/static-export project.
    - No match → cwd is the candidate root; continue to step 3 with
      intent routing; do NOT yet write any files.
 3. Read context (if site exists):
    - For xiaoyi-ssg sites: config.yml + .xiaoyi-ssg-design-tokens.json +
      .xiaoyi-ssg/content-types.json + source/**/*.md list +
      .xiaoyi-ssg/pipeline-manifest.json.
-   - For other static sites: read the generator's own config file
+   - For other site/static-export projects: read the source tool's own config file
      (hugo.toml, _config.yml, astro.config.*, etc.) and the existing
      content tree, but DO NOT modify them. Use them only to inform the
      user-facing takeover banner.
@@ -201,13 +200,13 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 4. Recognize intent (user input + context):
    - INIT_PIPELINE: no marker matched, or user explicitly says "new site/project"
    - TAKE_OVER_EXISTING: site marker matched; route to Sub-flow A
-     (xiaoyi-ssg), Sub-flow B (other static site migration), or Sub-flow
-     C (unknown / not a static site) per the takeover spec
+     (xiaoyi-ssg), Sub-flow B (other site/static-export migration), or Sub-flow
+     C (unknown / not a site project) per the takeover spec
    - RUN_BUILD: "build/generate/publish/preview" with pipeline present
    - RUN_DEV: "dev/realtime/watch" with pipeline present
    - REGENERATE_PIPELINE: "switch style/adjust layout/change color/theme/add content type/add data source/change data source"
    - DEFINE_CONTENT_TYPE: "add a markdown XX type/new content type" (front-matter schema)
-   - ADD_DATA_SOURCE: "pull from this API / aggregate this RSS / group by tag / fetch this JSON / fetch this CSV" (v2 source kinds)
+   - ADD_DATA_SOURCE: "pull from this API / aggregate this RSS / group by tag / fetch this JSON / fetch this CSV" (v1 source kinds)
    - ANALYZE_REFERENCE: "reference this site/like xxx.com"
    - CONTENT_EDIT: "change title/add tag/change date/edit body" → locate file and edit
    - PREVIEW: "preview/show effect/local server"
@@ -226,7 +225,7 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 | "build/generate the site" / "build" | RUN_BUILD | Pipeline must exist |
 | "dev mode" / "realtime preview" / "watch" / "dev" | RUN_DEV | Pipeline must exist |
 | "switch to a cleaner style" / "darken the theme" | REGENERATE_PIPELINE | Current tokens + pipeline-manifest |
-| "add a 'project' type with cover, tech stack, links" | DEFINE_CONTENT_TYPE | Current content-types + manifest v2 markdown source |
+| "add a 'project' type with cover, tech stack, links" | DEFINE_CONTENT_TYPE | Current content-types + current manifest markdown source |
 | "pull products from https://api.shop.example.com, with token PRODUCTS_API_TOKEN" | ADD_DATA_SOURCE (http) | URL, auth.env, JSONPath select, field map, fallback |
 | "aggregate posts by tag into /tag/{slug}/ pages" | ADD_DATA_SOURCE (derived groupBy) + REGENERATE_PIPELINE | Current markdown source; which field to group by |
 | "import https://example.com/changelog.json as a news page" | ADD_DATA_SOURCE (json or http) | URL or file path, JSONPath select |
@@ -234,7 +233,7 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 | "change this article's title to..." | CONTENT_EDIT | Need to locate file |
 | "preview it" | PREVIEW | After build or directly via dev |
 | "check if there is any problem" | DIAGNOSE | Scan logic |
-| "switch to a darker theme", "add a project type", "regenerate", or any phrasing on a directory that already has a recognized site marker | TAKE_OVER_EXISTING (Sub-flow A if xiaoyi-ssg, Sub-flow B if another static site) | Site marker must be detected first |
+| "switch to a darker theme", "add a project type", "regenerate", or any phrasing on a directory that already has a recognized site marker | TAKE_OVER_EXISTING (Sub-flow A if xiaoyi-ssg, Sub-flow B if another site/static-export project) | Site marker must be detected first |
 
 **Ambiguity handling**: if intent is unclear, the AI proactively asks (e.g., "Do you want to adjust the visual style, or add a new content type?").
 
@@ -253,7 +252,7 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
    - WebFetch the page HTML
    - Per prompts/reference-analysis.md extract: color, typography, spacing, layout, components, interactions
    - Output structured design intent: design-intent.json
-4. Clarify the data model (v2: data ORIGIN first, not content type):
+4. Clarify the data model (v1: data ORIGIN first, not content type):
    - "Where does the data live? Local markdown files? An API? A JSON/CSV file? An RSS feed? Or derived from another source?"
    - For EACH data origin, ask which fields are needed and how they map to the standard item shape.
    - For local markdown sources, per prompts/content-type-definition.md generate content-types.json (front-matter schema only; render.js does not read this for rendering, only for AI authoring guidance).
@@ -269,12 +268,12 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
 7. Generate the rendering pipeline:
    - Read prompts/pipeline-generation.md, prompts/render-node-spec.md, prompts/data-sources.md
    - Inputs: tokens + content-types + config + sources/views manifest + interactions
-   - Generate all <PIPELINE_DIR>/ files in one pass, including the .xiaoyi-ssg/sources/ adapter directory and the manifest v2
+   - Generate all <PIPELINE_DIR>/ files in one pass, including the .xiaoyi-ssg/sources/ adapter directory and the current manifest
 8. Persist files:
    - config.yml
    - .xiaoyi-ssg-design-tokens.json
    - .xiaoyi-ssg/content-types.json (markdown front-matter schema; only present when the site uses markdown sources)
-   - .xiaoyi-ssg/template-manifest.json (v2: sources + views)
+   - .xiaoyi-ssg/template-manifest.json (v1: sources + views)
    - source/ directory structure (create missing _<type>/ per markdown sources; create source/_media/; do not overwrite existing files)
    - <PIPELINE_DIR>/ (render.js, dev.js, package.json, sources/, templates/, assets/, config.schema.json, pipeline-manifest.json)
    - .gitignore (ignore public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/, .xiaoyi-ssg/.cache/)
@@ -299,7 +298,7 @@ Prerequisite: <PIPELINE_DIR>/render.js must exist
 Run: node .xiaoyi-ssg/render.js [--fresh]
 
 Render script logic (Node.js ESM, see prompts/render-node-spec.md for details):
-1. Read config.yml + .xiaoyi-ssg-design-tokens.json + content-types.json + template-manifest.json (v2)
+1. Read config.yml + .xiaoyi-ssg-design-tokens.json + content-types.json + template-manifest.json (current v1)
 2. loadSources(): dispatch to Source Adapters (markdown / http / json / csv / rss / inline / derived) in topological order. Output: datasets.
 3. Read .xiaoyi-ssg-cache.json (build cache) and .xiaoyi-ssg/.cache/sources/*.json (source snapshots)
 4. expandViews(): expand views (for.each / for.paginate / use / single) into concrete render tasks. Source-type agnostic.
@@ -388,7 +387,7 @@ Trigger: theme/layout/color adjustment, content type add/remove/edit
 
 #### ADD_DATA_SOURCE (Add/Modify a Data Source)
 
-This is the v2 intent for API-backed apps, RSS aggregation, JSON/CSV data, or computed (derived) sources. It is parallel to DEFINE_CONTENT_TYPE but covers the long-tail the v1 model could not express.
+This is the v1 intent for API-backed apps, RSS aggregation, JSON/CSV data, or computed (derived) sources. It is parallel to DEFINE_CONTENT_TYPE and covers the long-tail that earlier collection-style drafts could not express cleanly.
 
 ```
 1. Confirm the source kind: http / json / csv / rss / inline / derived. If none fit, propose writing a new Source Adapter under .xiaoyi-ssg/sources/<type>.js + registering the type in schemas/source.schema.json; this is a normal extension path.
@@ -404,7 +403,7 @@ This is the v2 intent for API-backed apps, RSS aggregation, JSON/CSV data, or co
    - aggregated on the home (use: [...]) — alongside which other sources?
    - taxonomy pages over a derived groupBy source — for.each with output like `/tag/{field}/`
 4. If auth.env is set: confirm the user knows which env var to set in their build environment. NEVER write the value into the manifest, README, or pipeline-manifest.json; record only the name.
-5. Update template-manifest.json v2: add the source entry and the matching view entries. Do NOT introduce a v1-style collections entry; v2 is source+views only.
+5. Update current template-manifest.json: add the source entry and the matching view entries. Do NOT introduce a legacy collection-style entry; the current v1 model is sources + views.
 6. Trigger REGENERATE_PIPELINE: regenerate render.js (or confirm the existing engine already supports the adapter), templates, interaction data, and CSS if needed.
 7. After the user runs npm run build:fresh, run the mandatory self-test including assertNoSecretsInOutput.
 ```
@@ -489,12 +488,12 @@ Sub-flow A — xiaoyi-ssg → xiaoyi-ssg (already our pipeline):
 5. NEVER overwrite existing user content. NEVER recreate source/_<type>/
    that already exists. NEVER bump version unless the user asks.
 
-Sub-flow B — other static site → xiaoyi-ssg (migration):
+Sub-flow B — other site/static-export project → xiaoyi-ssg (migration):
 
 Trigger: site-root marker matched but the directory is NOT a xiaoyi-ssg
 project (no config.yml + .xiaoyi-ssg/ pair). Examples include Hugo,
 Jekyll, Hexo, Eleventy, Astro, Next.js static export, plain static HTML,
-or any unfamiliar static site the AI recognizes.
+or any unfamiliar site/static-export project the AI recognizes.
 
 Hard rules (these override convenience):
 
@@ -550,7 +549,7 @@ Flow:
    runs so .xiaoyi-ssg/ matches the rest of the skill, but it MUST
    respect rule (a) above.
 
-Sub-flow C — unknown / not a static site:
+Sub-flow C — unknown / not a site project:
 
 If the AI walks up and the candidate root does not satisfy any site
 marker, the AI MUST ask the user before treating cwd as <SITE_ROOT>.
@@ -610,7 +609,7 @@ In all sub-flows:
 
 **Field types**: `string`, `datetime`, `date`, `boolean`, `string[]`, `url`, `number`, `object`.
 
-> **v2 alignment.** `content-types.json` describes the **front-matter schema** for markdown sources (authoring guidance and optional validation). It does NOT drive rendering. Page shape and pagination are declared in `template-manifest.json` v2: per-item pages via `views[].for.each`, paginated lists via `views[].for.paginate`, singleton pages via a `markdown` source that yields one item (no special flag is required — use a single-source `for.each` view or a single-page view with `use: [...]`).
+> **v1 alignment.** `content-types.json` describes the **front-matter schema** for markdown sources (authoring guidance and optional validation). It does NOT drive rendering. Page shape and pagination are declared in `template-manifest.json` v1: per-item pages via `views[].for.each`, paginated lists via `views[].for.paginate`, singleton pages via a `markdown` source that yields one item (no special flag is required — use a single-source `for.each` view or a single-page view with `use: [...]`).
 > The JSON keys `types.<name>.dir` correspond to markdown `sources.<name>.dir` in `template-manifest.json`; both files are kept in sync by the pipeline-generation flow.
 
 ---
@@ -915,7 +914,7 @@ Standard content item fields:
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "outputs": {
     "/blog/hello-world/": {
       "hash": "sha256:...",
