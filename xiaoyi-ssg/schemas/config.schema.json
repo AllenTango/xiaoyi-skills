@@ -36,6 +36,23 @@
     "pages": { "type": "array" },
     "nav": { "type": "array" },
     "social": { "type": "array" },
+    "geo": {
+      "type": "object",
+      "description": "GEO / AI-bots settings. All fields are optional with engine defaults. Full spec: prompts/geo-conventions.md.",
+      "properties": {
+        "ai_bots": { "type": "string", "enum": ["allow", "block", "custom"], "default": "allow" },
+        "ai_bot_rules": {
+          "type": "object",
+          "description": "Per-bot allow/block map; only used when ai_bots: 'custom'. Keys are bot names (must be a subset of the canonical 15-bot list, validated at runtime by validateConfig), values are 'allow' or 'block'.",
+          "additionalProperties": { "type": "string", "enum": ["allow", "block"] }
+        },
+        "llms_full":       { "type": "boolean", "default": false,  "description": "Emit /llms-full.txt. Opt-in; default off." },
+        "markdown_mirror": { "type": "boolean", "default": true,   "description": "Emit per-page /<url>/index.md alongside the HTML." },
+        "jsonld":          { "type": "boolean", "default": true,   "description": "Inject JSON-LD structured data in <head>." },
+        "noai":            { "type": "boolean", "default": false,  "description": "Site-wide default for <meta name='robots' content='noai'>. Per-page frontmatter overrides this." }
+      },
+      "additionalProperties": false
+    },
     "dev": {
       "type": "object",
       "description": "Dev-server settings read by .xiaoyi-ssg/dev.js. The `port` field drives the mandatory port-auto-increment pattern (see prompts/render-node-spec.md).",

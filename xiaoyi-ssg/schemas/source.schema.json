@@ -159,7 +159,7 @@
     }
   },
 
-  "allOf": [
+    "allOf": [
     { "if": { "properties": { "type": { "const": "markdown" } } }, "then": { "required": ["dir"] } },
     { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
     { "if": { "properties": { "type": { "const": "rss" } } }, "then": { "required": ["url"] } },
@@ -172,6 +172,8 @@
     {
       "if": { "properties": { "type": { "const": "csv" } } },
       "then": { "anyOf": [{ "required": ["url"] }, { "required": ["file"] }] }
-    }
+    },
+    { "if": { "properties": { "type": { "const": "derived" }, "op": { "const": "filter" } } }, "then": { "required": ["where"] } },
+    { "if": { "properties": { "type": { "const": "derived" }, "op": { "const": "groupBy" } } }, "then": { "required": ["field"] } }
   ]
 }

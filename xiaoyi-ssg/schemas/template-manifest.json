@@ -121,7 +121,25 @@
         },
         "allOf": [
           { "if": { "properties": { "type": { "const": "layout" } } }, "then": { "required": ["file"] } },
-          { "if": { "properties": { "type": { "const": "page" } } }, "then": { "required": ["file", "layout", "output"] } }
+          { "if": { "properties": { "type": { "const": "page" } } }, "then": { "required": ["file", "layout", "output"] } },
+          {
+            "if": {
+              "required": ["for"],
+              "properties": {
+                "for": {
+                  "required": ["paginate"],
+                  "properties": {
+                    "paginate": { "type": "string" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "for": { "required": ["perPage"] }
+              }
+            }
+          }
         ]
       }
     },

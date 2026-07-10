@@ -74,7 +74,7 @@ The classic path. Reads `def.dir` (`source/_posts` etc.), parses front-matter wi
 - `slug` = front-matter `slug` else filename without date prefix/extension.
 - `body_html` = rendered markdown; raw markdown path is recorded in `contentFileMap` for the GEO markdown mirror.
 - All front-matter keys are flattened to the item top level.
-- `tree: true` consumes the front-matter fields `parent` (slug of the parent item; absent = root) and `nav_order` (numeric; lower = earlier). Used by documentation-style sidebar nav (e.g. `source/_docs`).
+- `tree: true` consumes the front-matter fields `parent` (the parent item's `slug`; **falsy** — `""`, `null`, `undefined` — means root) and `nav_order` (numeric; lower = earlier). Used by documentation-style sidebar nav (e.g. `source/_docs`). AI must set `defaults: { parent: "" }` (or the equivalent JSON `null`) whenever the upstream data may legitimately omit the parent reference; otherwise items whose parent is missing will be treated as roots rather than broken refs.
 
 ### `tree` on non-markdown sources
 
@@ -98,11 +98,12 @@ The classic path. Reads `def.dir` (`source/_posts` etc.), parses front-matter wi
   "file": "data/org-chart.json",
   "select": "$.nodes",
   "map": { "slug": "key", "title": "label", "parent": "reports_to" },
+  "defaults": { "parent": "", "nav_order": 0 },
   "tree": true
 }
 ```
 
-`buildTree(items)` groups items whose `parent === item.slug` under that item, ordered by `nav_order` ascending. Items with empty `parent` are roots. The tree is exposed via `meta.<sourceName>.tree` (see `prompts/render-node-spec.md` §`loadSources`) — templates do not see it on `datasets[name]`.
+`buildTree(items)` groups items whose `parent === item.slug` under that item, ordered by `nav_order` ascending. Items with a **falsy** `parent` (`""`, `null`, `undefined`, or a string that doesn't match any other item's `slug`) are roots. The tree is exposed via `meta.<sourceName>.tree` (see `prompts/render-node-spec.md` §`loadSources`) — templates do not see it on `datasets[name]`.
 
 ### `http` (build-time API fetch)
 
