@@ -91,7 +91,8 @@
     },
     "select": {
       "type": "string",
-      "description": "type=http|json: JSONPath-lite expression selecting the item array from the response, e.g. '$.data.items' or '$.results'. Omit if the response root is already the array."
+      "pattern": "^\\$(\\.([a-zA-Z_][\\w]*)|\\[\\d+\\])*$",
+      "description": "type=http|json: JSONPath-lite expression selecting the item array from the response. Subset syntax: '$' (root), '.key' / '.a.b.c' (property access), '[n]' (array index). Examples: '$.data.items', '$.results', '$'. Omit if the response root is already the array."
     },
 
     "file": {
