@@ -127,12 +127,13 @@
     },
     "globals": {
       "type": "object",
-      "description": "Global data available to every view",
+      "description": "Reserved for future per-site overrides of the engine-injected globals. The engine itself injects `{ site, nav, tokens, build_time, recentItems, allItemsUrl }` for every view (see prompts/render-node-spec.md §General Globals). When `globals` is empty / absent, the engine defaults apply. When set, fields declared here are merged ON TOP of the engine defaults (templates still see both).",
       "properties": {
-        "site":   { "type": "string", "default": "config.site" },
-        "nav":    { "type": "string", "default": "computed.nav" },
-        "tokens": { "type": "string", "default": "designTokens" }
-      }
+        "site":   { "type": "object",  "description": "Optional override merged into the engine-injected `site` (the value of `config.site`). Templates see the merged result." },
+        "nav":    { "type": "array",   "items": { "type": "object" }, "description": "Optional override merged into the engine-computed `nav` array. Each item: `{ title, url, active?, children? }`." },
+        "tokens": { "type": "object",  "description": "Optional override merged into the design tokens (from `.xiaoyi-ssg-design-tokens.json`). Use sparingly; per-site visual overrides are better expressed by editing the tokens file directly so the generated CSS picks them up." }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

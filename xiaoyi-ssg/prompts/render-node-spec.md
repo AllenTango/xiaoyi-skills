@@ -93,7 +93,7 @@ The AI that materializes `render.js` must implement (or import from generated he
 | `loadInteractionsManifest()` | `() => InteractionsManifest` | Parse `.xiaoyi-ssg/interactions.manifest.json`. Optional; default empty `{ interactions: [] }` when absent. |
 | `loadCache()` | `() => Cache` | Read `.xiaoyi-ssg-cache.json` if present; default `{ version: 1, outputs: {} }`. |
 | `validateConfig(config)` | `(c: Config) => void` | Throw on missing required keys (`site.title`, `site.language`). |
-| `buildNav(config, manifest, datasets)` | `(c, m, ds) => NavItem[]` | Compute primary nav from `config.nav` or from manifest view names with `nav: true` (engine-specific fallback). Each item: `{ title, url, active, children? }`. |
+| `buildNav(config, manifest, datasets)` | `(c, m, ds) => NavItem[]` | Read `config.nav` (declared in `config.yml` per `schemas/config.schema.json`) and shape it into `NavItem[]` (each: `{ title, url, active?, children? }`). If `config.nav` is absent, build a minimal default by walking manifest page views whose `output` is a top-level path (`/about/`, `/blog/`, …), using each view's `name` as the title and `output` as the url. Do not invent `nav: true` flags on views — that field does not exist in the schema. |
 | `recentGlobals(datasets, manifest)` | `(ds, m) => { recentItems: Item[], allItemsUrl: string }` | First non-empty dataset (by declaration order in `manifest.sources`) drives `recentItems` (sliced to 5) and `allItemsUrl` (`/${sourceName}/`). |
 | `initEta()` | `() => Eta` | Configure with `views: templates/`, `useWith: true`, `cache: true`. |
 | `loadSources(sources, ctx)` | `(sources, ctx) => Promise<{ datasets, meta }>` | Topological dispatch through `ADAPTERS[source.type]`. Returns `{ datasets, meta: { [name]: { tree? } } }` — see §`loadSources`. |
@@ -103,6 +103,7 @@ The AI that materializes `render.js` must implement (or import from generated he
 | `buildTree(items)` | `(items) => TreeNode` | Build parent/child tree from `parent` + `nav_order` fields. Roots are items with no `parent`. |
 | `expandViews(views, datasets, config)` | `(views, ds, c) => Task[]` | Source-type agnostic expansion into `for.each` / `for.paginate` / single tasks. |
 | `filterWhere(items, where)` | `(items, where?) => items` | Apply `where: { field: value | value[] }` filter (array = any-match). |
+| `buildPagination(current, total, baseOutput)` | `(n, total, tpl) => Pagination` | Build `{ current, total, base_url, pages, prev_url, next_url }` from the 1-based current page and total. `baseOutput` is the view's `output` template with `{n}` (or the equivalent dir-style prefix) for linking to other pages. `pages` is the array to render (e.g. `[1, 2, 3, '…', 10]`) with `'…'` elision when total > 7. `prev_url` / `next_url` are `null` at the ends. |
 | `injectUsed(use, datasets)` | `(use, ds) => Record<string, Item[]>` | `{ [sourceName]: datasets[sourceName] || [] }` for each `use` entry; consumed by `ctxBase`. |
 | `instantiate(view, ctx)` | `(view, ctx) => Task` | Compute `output` via `interpolate + normalizePath`; carry `data` for the template. |
 | `interpolate(template, ctx)` | `(tpl: string, ctx) => string` | Replace `{slug}`, `{n}` (= `ctx.page`), `{lang}`, `{source}`, `{field}`, `{date:FMT}`. Undefined → `''`. |
@@ -118,7 +119,7 @@ The AI that materializes `render.js` must implement (or import from generated he
 | `writeExtras(extras)` | `(extras) => void` | Write each entry to `public/assets/data/<filename>`. |
 | `generateFeeds(datasets, config, manifest)` | `(ds, c, m) => void` | RSS / Atom / JSON Feed per source. |
 | `generateSitemap(tasks, config)` | `(tasks, c) => void` | Aggregate `public/<output>/index.html` paths; respect per-page `updated`. |
-| `generate404(config, tokens, eta, nav)` | `(c, tk, eta, nav) => void` | Render `404.html` view into `public/404/index.html` (and a top-level `404.html` for legacy hosts). |
+| `generateLegacy404(eta, manifest)` | `(eta, m) => void` | After the main render loop, write a top-level `public/404.html` for legacy static hosts (Cloudflare Pages, Netlify default, GitHub Pages) that serve `/404.html` instead of `/404/index.html`. Locate the `404` view in `manifest.views` (must be present per template-manifest-generation.md post-generation checklist), re-render it with the base layout + a minimal data object, and write the result to `public/404.html`. The `/404/index.html` form is produced by the regular render loop. |
 | `generateGeo(datasets, tasks, config, contentTypes)` | `(ds, tasks, c, ct) => void` | `llms.txt` / `llms-full.txt` / `robots.txt` / markdown mirror / JSON-LD. Full spec in `prompts/geo-conventions.md`. |
 | `assertNoSecretsInOutput(manifest.sources)` | `(sources) => void` | Grep `public/**` for every resolved `auth.env` value; throw on any match. Mandatory — runs after every build. |
 | `saveCache(cache)` | `(c) => void` | Write `.xiaoyi-ssg-cache.json` atomically (tmp + rename). |
@@ -185,7 +186,7 @@ export async function build(fresh = false) {
   writeExtras(buildExtras(config, datasets, interactions));
   generateFeeds(datasets, config, manifest);
   generateSitemap(tasks, config);
-  generate404(config, tokens, eta, nav);
+  generateLegacy404(eta, manifest);
   generateGeo(datasets, tasks, config, contentTypes);   // see GEO section
 
   // 7. Security self-check, save cache, summary
@@ -294,10 +295,11 @@ function injectUsed(use, datasets) {
 ### `renderWithLayout(eta, layoutName, pageTemplate, data)`
 
 ```javascript
-const withExtras = { ...data, sourceName: data.source };
-const body = await eta.renderAsync(pageTemplate, withExtras);
-return await eta.renderAsync(layoutName, { ...withExtras, body });
+const body = await eta.renderAsync(pageTemplate, data);
+return await eta.renderAsync(layoutName, { ...data, body });
 ```
+
+> Earlier drafts of this spec injected a `sourceName: data.source` alias for templates. v1 templates use `source` directly (see `templates/conventions.md` §4); the alias is dropped. If a legacy pipeline references `sourceName`, update the template.
 
 - Eta `useWith: true`: layout must concat with `<%~ body %>` (not `<%- body %>`).
 - Templates access fields at top level (`<%= site.title %>`, `<%= item.price %>`); never `it.`.

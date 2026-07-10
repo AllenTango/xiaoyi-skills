@@ -107,7 +107,7 @@ The AI must always generate a `geo:` block in `config.yml` even if all values ar
 
 ## `render.js` Additions
 
-### `generateLlmsTxt(collections, config, contentTypes)` — Always On
+### `generateLlmsTxt(datasets, config, contentTypes)` — Always On
 
 Output: `/llms.txt` (Answer.AI / Jeremy Howard standard).
 
@@ -139,7 +139,7 @@ Rules:
 - Per-item line: `- [{title}]({absoluteUrl}): {summary}`. If summary is empty, omit the `: ...` part — never emit `: ` with nothing after it
 - Use `site.url` to build absolute URLs only when present; otherwise relative URLs
 
-### `generateLlmsFullTxt(collections, config)` — Opt-In
+### `generateLlmsFullTxt(datasets, config, contentFileMap)` — Opt-In
 
 Output: `/llms-full.txt`.
 
