@@ -37,7 +37,7 @@
   - Default: **English** to save tokens.
   - **Sole exceptions** (Simplified Chinese only):
     - `SKILL.md` frontmatter `description` field (the skill summary that AI sees when loading)
-    - `AGENTS.md` introductory header (the 2-line preamble)
+    - `AGENTS.md` introductory header (top-of-file blockquote + 1-line statement: version / last_updated / current-branch + scope clarification)
 - **Class B — Non-interaction dependencies** (human / project management use; not token-sensitive):
   - `STATUS.md` and any future project-management document
   - Default: **Simplified Chinese**.

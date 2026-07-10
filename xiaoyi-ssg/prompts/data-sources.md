@@ -74,6 +74,35 @@ The classic path. Reads `def.dir` (`source/_posts` etc.), parses front-matter wi
 - `slug` = front-matter `slug` else filename without date prefix/extension.
 - `body_html` = rendered markdown; raw markdown path is recorded in `contentFileMap` for the GEO markdown mirror.
 - All front-matter keys are flattened to the item top level.
+- `tree: true` consumes the front-matter fields `parent` (slug of the parent item; absent = root) and `nav_order` (numeric; lower = earlier). Used by documentation-style sidebar nav (e.g. `source/_docs`).
+
+### `tree` on non-markdown sources
+
+`tree: true` is not markdown-specific — any adapter can populate `parent` / `nav_order` via `def.map` + `def.defaults` (or the upstream payload). Typical uses:
+
+```json
+{
+  "type": "http",
+  "url": "https://api.shop.example.com/v1/categories",
+  "map": { "slug": "id", "title": "name", "parent": "parent_id", "nav_order": "position" },
+  "defaults": { "parent": "", "nav_order": 0 },
+  "tree": true,
+  "cache": { "ttl": 3600 },
+  "fallback": "cache"
+}
+```
+
+```json
+{
+  "type": "json",
+  "file": "data/org-chart.json",
+  "select": "$.nodes",
+  "map": { "slug": "key", "title": "label", "parent": "reports_to" },
+  "tree": true
+}
+```
+
+`buildTree(items)` groups items whose `parent === item.slug` under that item, ordered by `nav_order` ascending. Items with empty `parent` are roots. The tree is exposed via `meta.<sourceName>.tree` (see `prompts/render-node-spec.md` §`loadSources`) — templates do not see it on `datasets[name]`.
 
 ### `http` (build-time API fetch)
 
@@ -97,7 +126,15 @@ Adapter algorithm:
 
 1. Resolve secret: `const secret = def.auth ? process.env[def.auth.env] : null`.
    - If `def.auth` is set but the env var is missing → follow `fallback` (do **not** send an empty/`Bearer undefined` header).
-2. Build request: apply `headers`; if `secret`, place it in `auth.header` (with `prefix`) or `auth.query`.
+2. Build request: apply `headers`; if `secret`, place it in `auth.header` (with `prefix`) or `auth.query`. For `auth.query`, the secret is appended to the URL using `URLSearchParams` (RFC 3986 percent-encoding, so `+`, `=`, `/`, and other reserved chars are escaped):
+   ```js
+   if (def.auth.query && secret != null) {
+     const u = new URL(url);
+     u.searchParams.set(def.auth.query, secret);    // overwrites any existing key with the same name
+     url = u.toString();
+   }
+   ```
+   The `def.auth.prefix` is **not** applied to query secrets (query params are sent verbatim). For header placement, prefix is prepended: `headers[def.auth.header || 'Authorization'] = (def.auth.prefix || '') + secret`.
 3. Check snapshot: if `cache.ttl` and a fresh snapshot exists, return it without fetching.
 4. `fetch(url, { method, headers, body, signal: AbortSignal.timeout(timeout) })`.
 5. Non-2xx or network error → `fallback` (`cache` | `empty` | `fail`).

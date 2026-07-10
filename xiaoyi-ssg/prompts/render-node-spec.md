@@ -80,6 +80,66 @@ Conforms to `schemas/template-manifest.json` (current v1). Two top-level arrays/
 
 > ⚠️ **Mandatory pre-read**: [`templates/conventions.md`](../templates/conventions.md) (Eta syntax, variable binding, field flattening) and [`data-sources.md`](./data-sources.md) (adapter contract, security). Non-compliance produces pipelines that look correct but render empty or leak secrets.
 
+### Engine Function Index
+
+The AI that materializes `render.js` must implement (or import from generated helpers) every name in the table below. Signatures are authoritative; bodies are implementation-defined but must satisfy the documented contract.
+
+| Function | Signature | Contract |
+|----------|-----------|----------|
+| `loadManifest()` | `() => Manifest` | Parse + validate `.xiaoyi-ssg/template-manifest.json` against `schemas/template-manifest.json`. Throws on schema violation, including unknown `source.type` not in the `enum`. |
+| `loadConfig()` | `() => Config` | Parse + validate `config.yml` against `schemas/config.schema.json`. |
+| `loadTokens()` | `() => DesignTokens` | Parse + validate `.xiaoyi-ssg-design-tokens.json` against `schemas/design-tokens.json`. |
+| `loadContentTypes()` | `() => ContentTypes` | Parse + validate `.xiaoyi-ssg/content-types.json` against `schemas/content-types.json`. Used for AI authoring guidance and optional frontmatter validation; `render.js` does **not** read it to find content. |
+| `loadInteractionsManifest()` | `() => InteractionsManifest` | Parse `.xiaoyi-ssg/interactions.manifest.json`. Optional; default empty `{ interactions: [] }` when absent. |
+| `loadCache()` | `() => Cache` | Read `.xiaoyi-ssg-cache.json` if present; default `{ version: 1, outputs: {} }`. |
+| `validateConfig(config)` | `(c: Config) => void` | Throw on missing required keys (`site.title`, `site.language`). |
+| `buildNav(config, manifest, datasets)` | `(c, m, ds) => NavItem[]` | Compute primary nav from `config.nav` or from manifest view names with `nav: true` (engine-specific fallback). Each item: `{ title, url, active, children? }`. |
+| `recentGlobals(datasets, manifest)` | `(ds, m) => { recentItems: Item[], allItemsUrl: string }` | First non-empty dataset (by declaration order in `manifest.sources`) drives `recentItems` (sliced to 5) and `allItemsUrl` (`/${sourceName}/`). |
+| `initEta()` | `() => Eta` | Configure with `views: templates/`, `useWith: true`, `cache: true`. |
+| `loadSources(sources, ctx)` | `(sources, ctx) => Promise<{ datasets, meta }>` | Topological dispatch through `ADAPTERS[source.type]`. Returns `{ datasets, meta: { [name]: { tree? } } }` — see §`loadSources`. |
+| `topoSortByDerivedFrom(sources)` | `(sources) => string[]` | Source names ordered so each `derived.from` is resolved first. Throws on cycle. |
+| `normalizeItem(item, def, sourceName)` | `(it, def, n) => Item` | Apply `def.map` + `def.defaults`, coerce `date` to string, default `tags`/`categories` to `[]`, spread all keys to the top level. |
+| `sortItems(items, sort)` | `(items, { field, order }) => items` | Stable sort by `field`. Unknown fields sort last. |
+| `buildTree(items)` | `(items) => TreeNode` | Build parent/child tree from `parent` + `nav_order` fields. Roots are items with no `parent`. |
+| `expandViews(views, datasets, config)` | `(views, ds, c) => Task[]` | Source-type agnostic expansion into `for.each` / `for.paginate` / single tasks. |
+| `filterWhere(items, where)` | `(items, where?) => items` | Apply `where: { field: value | value[] }` filter (array = any-match). |
+| `injectUsed(use, datasets)` | `(use, ds) => Record<string, Item[]>` | `{ [sourceName]: datasets[sourceName] || [] }` for each `use` entry; consumed by `ctxBase`. |
+| `instantiate(view, ctx)` | `(view, ctx) => Task` | Compute `output` via `interpolate + normalizePath`; carry `data` for the template. |
+| `interpolate(template, ctx)` | `(tpl: string, ctx) => string` | Replace `{slug}`, `{n}` (= `ctx.page`), `{lang}`, `{source}`, `{field}`, `{date:FMT}`. Undefined → `''`. |
+| `normalizePath(p)` | `(p: string) => string` | Collapse `//` → `/`, ensure single trailing `/` for directory outputs. |
+| `renderWithLayout(eta, layout, file, data)` | `(eta, layoutName, file, data) => Promise<string>` | Render page template, then layout with `{ ...data, body }` (layout must splice via `<%~ body %>`). |
+| `assignItemUrls(tasks, datasets)` | `(tasks, ds) => void` | Set `item.url` to `task.output` so interaction data and GEO link lists see the canonical URL. |
+| `computeTaskHash(task, tokens, config, interactions, datasets)` | `(t, tk, c, im, ds) => string` | sha256 of inputs (source file for markdown, JSON for API/derived items, template files, tokens, config subset, interactions manifest, style/script). |
+| `cacheHit(output, hash)` | `(output, hash) => boolean` | True if `cache.outputs[output]?.hash === hash` and existing file is on disk. |
+| `updateCache(output, hash)` | `(output, hash) => void` | Write into in-memory `cache`; persisted by `saveCache` at the end. |
+| `writeOutput(output, html)` | `(output, html) => void` | `public/<output>/index.html` for directory outputs; `mkdir -p` parents. |
+| `copyAssets()` | `() => void` | `cp -r templates/assets/* public/assets/` (use `fs.cpSync`). |
+| `buildExtras(config, datasets, interactions)` | `(c, ds, im) => Record<string, unknown>` | Produce `assets/data/*.json` payloads (search index, filter facets, gallery). See §Interaction Data Generation. |
+| `writeExtras(extras)` | `(extras) => void` | Write each entry to `public/assets/data/<filename>`. |
+| `generateFeeds(datasets, config, manifest)` | `(ds, c, m) => void` | RSS / Atom / JSON Feed per source. |
+| `generateSitemap(tasks, config)` | `(tasks, c) => void` | Aggregate `public/<output>/index.html` paths; respect per-page `updated`. |
+| `generate404(config, tokens, eta, nav)` | `(c, tk, eta, nav) => void` | Render `404.html` view into `public/404/index.html` (and a top-level `404.html` for legacy hosts). |
+| `generateGeo(datasets, tasks, config, contentTypes)` | `(ds, tasks, c, ct) => void` | `llms.txt` / `llms-full.txt` / `robots.txt` / markdown mirror / JSON-LD. Full spec in `prompts/geo-conventions.md`. |
+| `assertNoSecretsInOutput(manifest.sources)` | `(sources) => void` | Grep `public/**` for every resolved `auth.env` value; throw on any match. Mandatory — runs after every build. |
+| `saveCache(cache)` | `(c) => void` | Write `.xiaoyi-ssg-cache.json` atomically (tmp + rename). |
+| `printSummary(tasks, datasets)` | `(tasks, ds) => void` | `build done · rendered=N cached=M …` (one line). On warning, append a second line. |
+
+Adapter ctx shape (passed as second arg to every `adapter.load`):
+
+```js
+{
+  SITE_ROOT,                       // absolute path
+  PIPELINE_DIR,                    // absolute path
+  CACHE_DIR,                       // absolute path to .xiaoyi-ssg/.cache/
+  config,                          // parsed Config
+  fetchWithCache,                  // (url, init, cacheKey, ttl) => Promise<Response>
+  applyMap,                        // (item, def.map, def.defaults) => Item
+  log,                             // (level, message, meta?) => void  (console fallback)
+  name,                            // current source name
+  datasets,                        // already-resolved datasets (for derived adapters)
+}
+```
+
 ### Overall Flow
 
 ```javascript
@@ -94,8 +154,9 @@ export async function build(fresh = false) {
   validateConfig(config);
 
   // 1. Resolve every source (topological: derived after its `from`)
-  const datasets = await loadSources(manifest.sources, buildCtx(config));
-  //    datasets = { [sourceName]: Item[] }  — markdown, http, derived, ... all uniform
+  const { datasets, meta: datasetsMeta } = await loadSources(manifest.sources, buildCtx(config));
+  //    datasets     = { [sourceName]: Item[] }   — markdown, http, derived, ... all uniform
+  //    datasetsMeta = { [sourceName]: { tree? } } — only present for sources with tree: true
 
   // 2. Global data
   const nav = buildNav(config, manifest, datasets);
@@ -148,8 +209,9 @@ import * as derived from './sources/derived.js';
 const ADAPTERS = { markdown, http, json: jsonSrc, csv: csvSrc, rss, inline: inlineSrc, derived };
 
 async function loadSources(sources, ctx) {
-  const order = topoSortByDerivedFrom(sources);   // derived sources after their `from`
+  const order = topoSortByDerivedFrom(sources);   // derived sources after its `from`
   const datasets = {};
+  const meta = {};                                // per-source metadata (tree, ...); kept separate
   for (const name of order) {
     const def = sources[name];
     const adapter = ADAPTERS[def.type];
@@ -157,13 +219,14 @@ async function loadSources(sources, ctx) {
     let items = await adapter.load(def, { ...ctx, name, datasets });
     items = items.map(it => normalizeItem(it, def, name));   // map + defaults + flatten
     if (def.sort) items = sortItems(items, def.sort);
-    const dataset = def.tree ? { items, tree: buildTree(items) } : { items };
-    datasets[name] = items;                                   // items array is the primary handle
-    datasets[name].meta = dataset;                            // sidecar: tree, etc.
+    datasets[name] = items;
+    if (def.tree) meta[name] = { tree: buildTree(items) };   // only set when tree is requested
   }
-  return datasets;
+  return { datasets, meta };
 }
 ```
+
+> `loadSources` returns `{ datasets, meta }` (not just `datasets`). Templates access `datasets.<sourceName>` via `use: [...]` injection; `meta.<sourceName>.tree` is consumed by the docs-tree sidebar render path. Keeping meta off the items array prevents accidental iteration of `meta` keys when the engine calls `Object.values(datasets).flatMap(d => d)` for interaction data generation (see §Interaction Data Generation).
 
 - **No hardcoded source names.** Do not special-case `posts` / `collections.post`. Every source is generic.
 - `normalizeItem` applies `def.map`, `def.defaults`, coerces `date` via `String(...)`, defaults `tags`/`categories` to `[]`, and **flattens all remaining keys to the top level**.

@@ -35,6 +35,25 @@
     },
     "pages": { "type": "array" },
     "nav": { "type": "array" },
-    "social": { "type": "array" }
+    "social": { "type": "array" },
+    "dev": {
+      "type": "object",
+      "description": "Dev-server settings read by .xiaoyi-ssg/dev.js. The `port` field drives the mandatory port-auto-increment pattern (see prompts/render-node-spec.md).",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 3000,
+          "description": "Base port for the dev server. dev.js increments on EADDRINUSE (max 20 attempts) before exiting non-zero."
+        },
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind address. Default loopback only; switch to 0.0.0.0 explicitly when needed for LAN preview."
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }

@@ -59,7 +59,7 @@
               "order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }
             }
           },
-          "tree":      { "type": "boolean", "default": false, "description": "Build a tree structure from parent/nav_order fields" },
+          "tree":      { "type": "boolean", "default": false, "description": "Build a tree structure from parent/nav_order fields (for sidebar navigation). Applies to any source kind, not just markdown." },
           "delimiter": { "type": "string", "default": ",", "description": "type=csv: column delimiter" },
           "cache": {
             "type": "object",
