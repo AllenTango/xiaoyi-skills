@@ -13,7 +13,7 @@ This file defines how `xiaoyi-ssg` makes sites consumable by AI search engines a
 
 **The user's existing content is the GEO source.**
 
-For a blog, `source/_posts/*.md` is the GEO source. For docs, `source/_docs/**/*.md` is the GEO source. For landing/about, `source/_<singleton>/*.md` is the GEO source. There is no separate `_geo/` directory; the AI must not invent one.
+For a blog, `source/posts/*.md` is the GEO source. For docs, `source/docs/**/*.md` is the GEO source. For landing/about, `source/<singleton>/*.md` is the GEO source. There is no separate `geo/` directory; the AI must not invent one.
 
 `render.js` aggregates the existing content into AI-friendly artifacts:
 
@@ -317,7 +317,7 @@ For very large schemas, the AI may inline a `<script type="application/ld+json">
 
 Add to the chokidar watch list:
 
-- `source/_<type>/**` (already covered by `source/**`)
+- `source/<type>/**` (already covered by `source/**`)
 - `config.yml` (already covered)
 
 No additional paths needed — GEO outputs are derived from content + config, both already watched.

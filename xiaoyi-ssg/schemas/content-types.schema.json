@@ -23,8 +23,8 @@
           },
           "dir": {
             "type": "string",
-            "pattern": "^source/_[a-z0-9][a-z0-9-]*$",
-            "description": "Content directory relative to site root. Conventionally `source/_<type>`. Must match the corresponding markdown source's `dir` in template-manifest.json."
+            "pattern": "^source/[a-z0-9][a-z0-9-]*$",
+            "description": "Content directory relative to site root. Conventionally `source/<type>`. Must match the corresponding markdown source's `dir` in template-manifest.json."
           },
           "fields": {
             "type": "object",

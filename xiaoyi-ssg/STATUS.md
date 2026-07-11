@@ -35,7 +35,7 @@ tested: true
 - [x] 合并 references/frontend-design-integration.md 到 SKILL.md § Design System Delegation，删除该文件
 - [x] 删除冗余 README.md
 - [x] 项目管理文档 STATUS.md 保留简体中文
-- [x] GEO 支持（默认开启）：用户现有 `source/_<type>/*.md` 即 GEO 来源，render.js 自动聚合为 `/llms.txt`、`/robots.txt`、每页 markdown 镜像、JSON-LD；`llms-full.txt` opt-in
+- [x] GEO 支持（默认开启）：用户现有 `source/<type>/*.md` 即 GEO 来源，render.js 自动聚合为 `/llms.txt`、`/robots.txt`、每页 markdown 镜像、JSON-LD；`llms-full.txt` opt-in
 - [x] v1 开发范围澄清：sources + views、数据源扩展、取消旧定位等调整均属于 v1 范围，不代表大版本或 breaking release
 - [ ] 等待社区 review + 合并
 
@@ -49,7 +49,7 @@ tested: true
    - B 类（项目管理等非交互依赖）：简体中文
 3. **Client 适配规则**：不展开 client-agnostic 适配矩阵
 4. **引用文件清单规则**：删除文件前 `grep` 确认无孤儿引用
-5. **GEO 来源纪律**：用户的现有 `source/_<type>/*.md` 即 GEO 来源，**AI 不得发明 `_geo/` 目录或要求用户额外撰写 GEO 文件**；GEO 是输出聚合器，不是新的创作流
+5. **GEO 来源纪律**：用户的现有 `source/<type>/*.md` 即 GEO 来源，**AI 不得发明 `geo/` 目录或要求用户额外撰写 GEO 文件**；GEO 是输出聚合器，不是新的创作流
 
 ## 文档分类
 

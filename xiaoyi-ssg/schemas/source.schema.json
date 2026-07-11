@@ -8,7 +8,7 @@
     "type": {
       "type": "string",
       "enum": ["markdown", "http", "json", "csv", "rss", "inline", "derived"],
-      "description": "Adapter kind. `markdown` = local source/_*/*.md (default content). `http` = build-time fetch of a remote API. `json`/`csv` = local or remote structured file. `rss` = feed. `inline` = literal items embedded in the manifest. `derived` = computed from another source."
+      "description": "Adapter kind. `markdown` = local source/<name>/*.md (default content). `http` = build-time fetch of a remote API. `json`/`csv` = local or remote structured file. `rss` = feed. `inline` = literal items embedded in the manifest. `derived` = computed from another source."
     },
 
     "sort": {
@@ -37,7 +37,8 @@
 
     "dir": {
       "type": "string",
-      "description": "type=markdown: content directory relative to site root, e.g. 'source/_posts'."
+      "pattern": "^source/[a-z0-9][a-z0-9-]*$",
+      "description": "type=markdown: content directory relative to site root, e.g. 'source/posts'. User-managed source subdirectories must use conventional names without a leading underscore."
     },
 
     "url": {

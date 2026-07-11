@@ -1,6 +1,6 @@
 # Markdown Source Field Modeling
 
-This prompt covers one specific data origin: **local markdown sources**. In v1, markdown is one of seven Source Adapters, not the center of the engine. Use this file when the user is authoring content that lives as `source/_<type>/*.md`. For other data origins, see [`data-sources.md`](./data-sources.md).
+This prompt covers one specific data origin: **local markdown sources**. In v1, markdown is one of seven Source Adapters, not the center of the engine. Use this file when the user is authoring content that lives as `source/<type>/*.md`. For other data origins, see [`data-sources.md`](./data-sources.md).
 
 > **v1 shift.** Content modeling is now narrower than before: it only describes the front-matter fields of a markdown source (validation, defaults, display hints). The engine itself no longer has "content types" as a first-class concept; pages are described by `views` over `sources`. The `content-types.json` file still exists for front-matter validation and AI-driven content authoring, but `render.js` reads sources, not content types, for rendering.
 
@@ -12,7 +12,7 @@ This prompt covers one specific data origin: **local markdown sources**. In v1, 
 AI: "Where does the content live? Local markdown, API, JSON file, feed, or derived from another source?"
 User: "Local markdown for posts and projects."
 AI: "For each markdown source, tell me: directory name, label, and which fields each .md file needs."
-User: "posts under source/_posts, fields: title, date, tags, cover, excerpt, draft."
+User: "posts under source/posts, fields: title, date, tags, cover, excerpt, draft."
 AI: Generate / update content-types.json
 AI: "Confirm? If yes, the matching sources + views will be generated in template-manifest.json."
 User: "Confirmed"
@@ -28,11 +28,13 @@ AI: "Type name (kebab-case, e.g., post, project, talk)?"
 User: "project"
 AI: "English label?"
 User: "Project"
-AI: "Content directory name (default source/_project)?"
+AI: "Content directory name (default source/projects)?"
 User: "Use default"
 ```
 
 ### 2. Field Definitions
+
+Directory names must be user-friendly kebab-case paths under `source/` and must not start with `_` (for example `source/posts`, `source/projects`, `source/media`).
 
 ```
 AI: "Define front-matter fields. Tell me for each: field name, type, required, default, description. Common types:
@@ -114,7 +116,7 @@ Output `content-types.json`:
   "types": {
     "project": {
       "label": "Project",
-      "dir": "source/_projects",
+      "dir": "source/projects",
       "fields": {
         "title":       { "type": "string",   "required": true },
         "date":        { "type": "date",     "required": true },
@@ -128,7 +130,7 @@ Output `content-types.json`:
     },
     "post": {
       "label": "Article",
-      "dir": "source/_posts",
+      "dir": "source/posts",
       "fields": {
         "title":       { "type": "string",   "required": true },
         "date":        { "type": "datetime", "required": true },
@@ -148,8 +150,8 @@ Output `content-types.json`:
 >
 > ```json
 > "sources": {
->   "projects": { "type": "markdown", "dir": "source/_projects", "sort": { "field": "date", "order": "desc" } },
->   "posts":    { "type": "markdown", "dir": "source/_posts",    "sort": { "field": "date", "order": "desc" } }
+>   "projects": { "type": "markdown", "dir": "source/projects", "sort": { "field": "date", "order": "desc" } },
+>   "posts":    { "type": "markdown", "dir": "source/posts",    "sort": { "field": "date", "order": "desc" } }
 > }
 > ```
 >
@@ -176,7 +178,7 @@ Output `content-types.json`:
 
 1. Write `<SITE_ROOT>/.xiaoyi-ssg/content-types.json`.
 2. Trigger `template-manifest.json` v1 sync: add the corresponding markdown `source` entry; add/refresh the matching `view` entries.
-3. Create `source/_<type>/` directory if it does not already exist.
+3. Create `source/<type>/` directory if it does not already exist.
 4. Trigger `REGENERATE_PIPELINE` to regenerate the matching sources, views, and templates.
 
 ---

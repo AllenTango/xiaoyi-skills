@@ -65,16 +65,17 @@ The engine dispatches on `def.type`. **Unknown type → clear error naming the m
 
 ### `markdown` (default content)
 
-The classic path. Reads `def.dir` (`source/_posts` etc.), parses front-matter with `js-yaml`, renders body with `marked`.
+The classic path. Reads `def.dir` (`source/posts` etc.), parses front-matter with `js-yaml`, renders body with `marked`.
 
 ```json
-{ "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } }
+{ "type": "markdown", "dir": "source/posts", "sort": { "field": "date", "order": "desc" } }
 ```
 
+- `dir` must be a user-managed, conventional directory under `source/` with no leading underscore, e.g. `source/posts`, `source/docs`, or `source/projects`.
 - `slug` = front-matter `slug` else filename without date prefix/extension.
 - `body_html` = rendered markdown; raw markdown path is recorded in `contentFileMap` for the GEO markdown mirror.
 - All front-matter keys are flattened to the item top level.
-- `tree: true` consumes the front-matter fields `parent` (the parent item's `slug`; **falsy** — `""`, `null`, `undefined` — means root) and `nav_order` (numeric; lower = earlier). Used by documentation-style sidebar nav (e.g. `source/_docs`). AI must set `defaults: { parent: "" }` (or the equivalent JSON `null`) whenever the upstream data may legitimately omit the parent reference; otherwise items whose parent is missing will be treated as roots rather than broken refs.
+- `tree: true` consumes the front-matter fields `parent` (the parent item's `slug`; **falsy** — `""`, `null`, `undefined` — means root) and `nav_order` (numeric; lower = earlier). Used by documentation-style sidebar nav (e.g. `source/docs`). AI must set `defaults: { parent: "" }` (or the equivalent JSON `null`) whenever the upstream data may legitimately omit the parent reference; otherwise items whose parent is missing will be treated as roots rather than broken refs.
 
 ### `tree` on non-markdown sources
 

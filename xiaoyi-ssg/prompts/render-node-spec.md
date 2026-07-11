@@ -42,7 +42,7 @@ Conforms to `schemas/template-manifest.json` (current v1). Two top-level arrays/
 {
   "version": 1,
   "sources": {
-    "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
+    "posts":    { "type": "markdown", "dir": "source/posts", "sort": { "field": "date", "order": "desc" } },
     "products": { "type": "http", "url": "https://api.example.com/products",
                   "auth": { "env": "PRODUCTS_API_TOKEN", "prefix": "Bearer " },
                   "select": "$.data.items", "map": { "slug": "id", "title": "name" },
@@ -377,7 +377,7 @@ await build(false);
 // Required watch paths — see §Required Watch Paths below. Single source of truth.
 const WATCH_PATHS = [
   'source/**/*.md',
-  'source/_media/**',
+  'source/media/**',
   'config.yml',
   '.xiaoyi-ssg-design-tokens.json',
   '.xiaoyi-ssg/template-manifest.json',
@@ -413,7 +413,7 @@ dev.js `chokidar.watch` MUST subscribe to **exactly** this list. The same list i
 | Path | Reason |
 |------|--------|
 | `source/**/*.md` | Markdown content changes |
-| `source/_media/**` | User-managed media (images, video) |
+| `source/media/**` | User-managed media (images, video) |
 | `config.yml` | Site config / language / nav / dev settings |
 | `.xiaoyi-ssg-design-tokens.json` | Design tokens → CSS variable regeneration |
 | `.xiaoyi-ssg/template-manifest.json` | Sources / views / expansion strategy change |
@@ -508,7 +508,7 @@ mirrorMarkdown(tasks, contentFileMap, config);
 - `mirrorMarkdown`: only for tasks whose `output` maps to a markdown source file in `contentFileMap`; skip API/derived/list/singleton pages.
 - JSON-LD (`buildJsonLd`) injected via `data.jsonLd`; `SCHEMA_MAP` keyed by `item.content_type` or source name, default `Article` (or `WebSite` for a landing/home singleton). **The full `SCHEMA_MAP` table (collection name → `@type`, payload schema, opt-out conditions) is defined in [`geo-conventions.md` § `buildJsonLd`](./geo-conventions.md) — do not duplicate or diverge it.**
 
-The GEO function bodies are unchanged from prior spec except they iterate `datasets` (source-generic) rather than a `collections` object. Do not invent a `_geo/` directory.
+The GEO function bodies are unchanged from prior spec except they iterate `datasets` (source-generic) rather than a `collections` object. Do not invent a `geo/` directory.
 
 ---
 

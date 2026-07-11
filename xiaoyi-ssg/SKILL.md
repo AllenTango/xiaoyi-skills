@@ -64,20 +64,21 @@ The skill content is independent of any specific AI client. Clients are assumed 
 - Locate an existing site by walking up from the current directory to find `config.yml`.
 - Do not write `<SKILL_DIR>/state.json`. The skill is stateless.
 - Build output lives in `public/`, user content in `source/`, generated pipeline source in `.xiaoyi-ssg/`.
+- Subdirectories under `source/` are user-managed and must not start with `_`; use `source/<type>/` and `source/media/`.
 
 ## Source Protection
 
 `source/` is user-owned content. Unless the current intent is explicitly content creation, editing, migration, or deletion, do not overwrite, delete, reformat, or bulk rewrite:
 
 - `source/**/*.md`
-- `source/_media/**`
+- `source/media/**`
 
 Allowed `source/` writes:
 
 - **init**: create missing directories and optional starter content only when the target path does not already exist.
 - **new content**: create the requested single content file.
 - **content edit**: modify only the file the user identified or confirmed.
-- **content type add**: create the missing `source/_<type>/` directory without touching existing files.
+- **content type add**: create the missing `source/<type>/` directory without touching existing files.
 - **migration/rename/delete**: proceed only after showing affected paths and getting explicit user intent.
 
 ## Site Shape
@@ -90,8 +91,8 @@ Generated sites should follow this layout:
 ├── .xiaoyi-ssg-design-tokens.json
 ├── .xiaoyi-ssg-cache.json
 ├── source/
-│   ├── _media/
-│   └── _<type>/            # markdown content (when used)
+│   ├── media/
+│   └── <type>/            # markdown content (when used)
 ├── .xiaoyi-ssg/
 │   ├── package.json
 │   ├── package-lock.json
@@ -120,7 +121,7 @@ Commit `.xiaoyi-ssg/` pipeline source. Ignore `.xiaoyi-ssg/node_modules/`, `publ
 
 > Built-in. No user setup required.
 
-Every generated site ships with GEO-ready artifacts, derived from the user's existing content (`source/_<type>/*.md`):
+Every generated site ships with GEO-ready artifacts, derived from the user's existing content (`source/<type>/*.md`):
 
 - `/llms.txt` — Answer.AI standard site map for LLMs (always on)
 - `/llms-full.txt` — concatenated markdown body of all content (opt-in via `config.geo.llms_full: true`)
@@ -129,7 +130,7 @@ Every generated site ships with GEO-ready artifacts, derived from the user's exi
 - JSON-LD in `<head>` per page (schema.org `BlogPosting` / `TechArticle` / `WebSite` / etc. by collection)
 - Semantic `<meta property="article:*">`, `<time datetime>`, `<article>` enrichment
 
-**GEO source discipline**: the user's existing markdown files are the source. The AI must NOT invent a separate `_geo/` directory or require a new authoring flow. Frontmatter may be enriched with `summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai` — but all are optional; defaults auto-derive.
+**GEO source discipline**: the user's existing markdown files are the source. The AI must NOT invent a separate `geo/` directory or require a new authoring flow. Frontmatter may be enriched with `summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai` — but all are optional; defaults auto-derive.
 
 See [`prompts/geo-conventions.md`](./prompts/geo-conventions.md) for the full spec (output formats, schema mapping, cache participation, common pitfalls).
 

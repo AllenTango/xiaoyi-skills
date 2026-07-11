@@ -79,13 +79,13 @@ The above rule controls **files written by the AI**. A separate rule governs
 
 ### 5. GEO (Generative Engine Optimization) Source Discipline
 
-- **The user's existing content is the GEO source.** `source/_<type>/*.md` files are what `render.js` aggregates into `/llms.txt`, `/llms-full.txt`, the per-page markdown mirror, and JSON-LD.
-- **The AI must NOT invent a separate `_geo/` directory or require the user to author GEO-specific files.** Doing so contradicts the design — GEO is an output aggregator over the user's existing content, not a new authoring flow.
+- **The user's existing content is the GEO source.** `source/<type>/*.md` files are what `render.js` aggregates into `/llms.txt`, `/llms-full.txt`, the per-page markdown mirror, and JSON-LD.
+- **The AI must NOT invent a separate `geo/` directory or require the user to author GEO-specific files.** Doing so contradicts the design — GEO is an output aggregator over the user's existing content, not a new authoring flow.
 - **GEO features default to ON.** llms.txt, robots.txt with the standard AI bot list, JSON-LD, per-page markdown mirror, and semantic meta enrichment are built into every generated `render.js`. The user can disable via `config.geo.*`, but defaults are on.
 - **`llms-full.txt` is opt-in** via `config.geo.llms_full: true`. Default off. Do not enable it by default in any sample, test, or generated pipeline.
 - **The standard AI bot list is fixed** (15 bots listed in `prompts/geo-conventions.md` § `generateRobotsTxt`). Do not add bots the user did not request, do not remove bots unless the user explicitly says so.
-- **`source/_<type>/*.md` frontmatter may need GEO extensions** (`summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai`) — but these are optional. When absent, `render.js` must auto-derive (`summary` from first paragraph) rather than emit empty values.
-- **`source/_<type>/*.md` content itself is read directly for the markdown mirror**, not the rendered `body_html`. The mirror writes the raw markdown body with frontmatter stripped.
+- **`source/<type>/*.md` frontmatter may need GEO extensions** (`summary`, `topics`, `audience`, `citation_key`, `content_type`, `updated`, `noai`) — but these are optional. When absent, `render.js` must auto-derive (`summary` from first paragraph) rather than emit empty values.
+- **`source/<type>/*.md` content itself is read directly for the markdown mirror**, not the rendered `body_html`. The mirror writes the raw markdown body with frontmatter stripped.
 
 ### 6. v1 Source + View Model & Build-time Security
 
@@ -156,7 +156,8 @@ See [`SKILL.md` § Required Dependencies](./SKILL.md).
 6. **Design source delegation**: all design tokens come from the `frontend-design` skill (mandatory). User dialogue, reference URLs, and screenshots are used to select or adjust a specific brand subset within `frontend-design`; this skill does not maintain a hardcoded theme library.
 7. **Node.js first**: installing this skill requires `npx skills add` (depends on Node.js). The user environment is assumed to have Node.js, so the rendering pipeline is Node.js-based.
 8. **Interaction is not decoration**: when a site needs search, filtering, theme switching, lightbox, form validation, players, charts, maps, etc., the pipeline must generate static-host-compatible browser JS, data files, and fallbacks. Do not strip necessary interactions to keep things "purely static".
-9. **Protect `source/` content**: `source/` is user content. Outside `INIT` / `NEW_CONTENT` / `CONTENT_EDIT` / `DEFINE_CONTENT_TYPE` (where the manifest explicitly permits new directories or specific file edits), `REGENERATE_PIPELINE` / `STYLE` / `INTERACTION` / `BUILD` / `DEV` / `PREVIEW` / `DIAGNOSE` must not overwrite, delete, reformat, or bulk rewrite `source/**/*.md` or `source/_media/**`.
+9. **Protect `source/` content**: `source/` is user content. Outside `INIT` / `NEW_CONTENT` / `CONTENT_EDIT` / `DEFINE_CONTENT_TYPE` (where the manifest explicitly permits new directories or specific file edits), `REGENERATE_PIPELINE` / `STYLE` / `INTERACTION` / `BUILD` / `DEV` / `PREVIEW` / `DIAGNOSE` must not overwrite, delete, reformat, or bulk rewrite `source/**/*.md` or `source/media/**`.
+10. **Use conventional source directory names**: user-managed subdirectories under `source/` must not start with `_`; use names like `source/posts`, `source/projects`, and `source/media`.
 
 ---
 
@@ -284,11 +285,11 @@ When the user types `/xiaoyi-ssg` or `/xiaoyi-ssg <initial-intent>`, the AI exec
    - .xiaoyi-ssg-design-tokens.json
    - .xiaoyi-ssg/content-types.json (markdown front-matter schema; only present when the site uses markdown sources)
    - .xiaoyi-ssg/template-manifest.json (v1: sources + views)
-   - source/ directory structure (create missing _<type>/ per markdown sources; create source/_media/; do not overwrite existing files)
+   - source/ directory structure (create missing `source/<type>/` per markdown source; create `source/media/`; do not create leading-underscore subdirectories; do not overwrite existing files)
    - <PIPELINE_DIR>/ (render.js, dev.js, package.json, sources/, templates/, assets/, config.schema.json, pipeline-manifest.json)
    - .gitignore (ignore public/, .DS_Store, *.log, .xiaoyi-ssg-cache.json, .xiaoyi-ssg/node_modules/, .xiaoyi-ssg/.cache/)
    - **README.md at <SITE_ROOT>**: brief, in the inferred site language, explaining directory layout, how to add content, how to run build / dev, and which env vars to set for API sources.
-   - **One demo `*.md` per markdown content type** in each `source/_<type>/` directory (only if empty) so the site has at least one renderable item per type. Each demo file MUST include a valid frontmatter matching the content-type schema and at least three short paragraphs of body content.
+   - **One demo `*.md` per markdown content type** in each `source/<type>/` directory (only if empty) so the site has at least one renderable item per type. Each demo file MUST include a valid frontmatter matching the content-type schema and at least three short paragraphs of body content.
 9. Install dependencies and first build:
    - Run `npm install` in <PIPELINE_DIR>/
    - Run first build: `cd .xiaoyi-ssg && npm run build`
@@ -343,7 +344,7 @@ Dev server logic (see prompts/render-node-spec.md):
    - .xiaoyi-ssg/interactions.manifest.json (interaction change)
    - .xiaoyi-ssg-design-tokens.json (design change)
    - config.yml (config change)
-   - source/_media/** (media change)
+   - source/media/** (media change)
 3. On change:
    a. Run incremental build (reusing render.js logic). Remote sources are NOT re-fetched on every keystroke; each source's snapshot + cache.ttl is respected. To force a re-fetch, the user runs npm run build:fresh.
    b. Push a reload event through SSE
@@ -375,8 +376,8 @@ Trigger: theme/layout/color adjustment, content type add/remove/edit
    - Preserve user-added dependencies in package.json (if any)
    - pipeline-manifest.json records: generation time, theme reference source, tokens hash, content-types hash
    - If package.json changes, re-run npm install
-   - Do not modify source/**/*.md or source/_media/**
-   - Only when a content type is added and its directory does not exist, allow creating an empty source/_<type>/
+   - Do not modify source/**/*.md or source/media/**
+   - Only when a content type is added and its directory does not exist, allow creating an empty source/<type>/
 4. Prompt the user to run `npm run build:fresh` or `npm run dev` inside <SITE_ROOT>/.xiaoyi-ssg/ to see the effect
 ```
 
@@ -391,7 +392,7 @@ Trigger: theme/layout/color adjustment, content type add/remove/edit
    - Relationship: related[], series
    - Custom: any key-value
 3. Generate / update content-types.json (with JSON Schema-compatible field definitions)
-4. Create source/_<type>/ directory only if it does not already exist; do not modify existing content
+4. Create source/<type>/ directory only if it does not already exist; do not modify existing content
 5. Trigger REGENERATE_PIPELINE: add the matching markdown `source` entry to template-manifest.json and the corresponding `view` entries; regenerate templates.
 ```
 
@@ -421,7 +422,7 @@ This is the v1 intent for API-backed apps, RSS aggregation, JSON/CSV data, or co
 #### CONTENT_EDIT (Edit Content)
 
 ```
-1. Parse or ask for location: type + title/date/tag → locate source/_<type>/<slug>.md
+1. Parse or ask for location: type + title/date/tag → locate source/<type>/<slug>.md
 2. Ask for the change: title, date, tags, categories, cover, body, custom fields
 3. Update front-matter and/or body
 4. Hint: if dev server is running → auto refresh; otherwise run build for incremental update
@@ -487,7 +488,7 @@ Sub-flow A — xiaoyi-ssg → xiaoyi-ssg (already our pipeline):
    - .xiaoyi-ssg-design-tokens.json
    - .xiaoyi-ssg/content-types.json
    - .xiaoyi-ssg/template-manifest.json
-   - All source/_<type>/*.md (grouped by collection)
+   - All source/<type>/*.md (grouped by collection)
 4. Decide action by user phrasing:
    - Style/theme change → update .xiaoyi-ssg-design-tokens.json (preserve
      custom fields the user added), then REGENERATE_PIPELINE.
@@ -495,7 +496,7 @@ Sub-flow A — xiaoyi-ssg → xiaoyi-ssg (already our pipeline):
    - Content edit → CONTENT_EDIT (do NOT regenerate the pipeline).
    - Build / dev / preview → RUN_BUILD / RUN_DEV / PREVIEW without
      touching any pipeline source file.
-5. NEVER overwrite existing user content. NEVER recreate source/_<type>/
+5. NEVER overwrite existing user content. NEVER recreate source/<type>/
    that already exists. NEVER bump version unless the user asks.
 
 Sub-flow B — other site/static-export project → xiaoyi-ssg (migration):
@@ -521,7 +522,7 @@ b. xiaoyi-ssg artifacts are written to a NEW sibling location to keep
    - xiaoyi-ssg config: <SITE_ROOT>/config.yml (only if absent)
    - xiaoyi-ssg tokens: <SITE_ROOT>/.xiaoyi-ssg-design-tokens.json
    - xiaoyi-ssg pipeline: <SITE_ROOT>/.xiaoyi-ssg/
-   - xiaoyi-ssg content: <SITE_ROOT>/source/_<type>/ (new tree, parallel
+   - xiaoyi-ssg content: <SITE_ROOT>/source/<type>/ (new tree, parallel
      to the existing content tree, NOT replacing it)
    - xiaoyi-ssg build output: <SITE_ROOT>/.xiaoyi-ssg-build/ by default
      (NOT public/, so it does not collide with Hugo's / Jekyll's public
@@ -530,8 +531,8 @@ b. xiaoyi-ssg artifacts are written to a NEW sibling location to keep
 c. If <SITE_ROOT>/config.yml already exists from a prior xiaoyi-ssg run
    that was abandoned, ask the user whether to overwrite, merge, or
    keep the old file before writing a new one.
-d. If the user explicitly says "migrate all my old posts to source/_posts",
-   the AI copies the content files into source/_<type>/ with frontmatter
+d. If the user explicitly says "migrate all my old posts to source/posts",
+   the AI copies the content files into source/<type>/ with frontmatter
    converted to xiaoyi-ssg's schema. The originals are left in place.
    If the user does NOT explicitly ask for content migration, the AI
    only generates the pipeline scaffolding and waits.
@@ -552,7 +553,7 @@ Flow:
 3. Ask the user to confirm migration scope:
    - Just the pipeline scaffolding (no content)
    - Migrate content from <old-generator-content-tree> to
-     source/_<type>/ (one-time copy, originals untouched)
+     source/<type>/ (one-time copy, originals untouched)
    - Full migration including deleting the old build (only after
      user has verified .xiaoyi-ssg-build/ works)
 4. Proceed with the chosen scope. The "REGENERATE_PIPELINE" step still
@@ -587,7 +588,7 @@ In all sub-flows:
   "types": {
     "post": {
       "label": "Article",
-      "dir": "source/_posts",
+      "dir": "source/posts",
       "fields": {
         "title": { "type": "string", "required": true },
         "date": { "type": "datetime", "required": true },
@@ -600,7 +601,7 @@ In all sub-flows:
     },
     "project": {
       "label": "Project",
-      "dir": "source/_projects",
+      "dir": "source/projects",
       "fields": {
         "title": { "type": "string", "required": true },
         "date": { "type": "date", "required": true },
@@ -933,7 +934,7 @@ Standard content item fields:
     "/blog/hello-world/": {
       "hash": "sha256:...",
       "inputs": [
-        "source/_posts/2025-01-15-hello-world.md",
+        "source/posts/2025-01-15-hello-world.md",
         ".xiaoyi-ssg/templates/detail.html",
         ".xiaoyi-ssg/templates/base.html",
         ".xiaoyi-ssg/template-manifest.json"

@@ -49,7 +49,7 @@ Pick the adapter by **where the data lives**, not by what the page looks like. T
 
 | Where the data lives | Adapter | Example |
 |----------------------|---------|---------|
-| Local markdown files (`source/_posts/*.md`) | `markdown` | `{ "type": "markdown", "dir": "source/_posts" }` |
+| Local markdown files (`source/posts/*.md`) | `markdown` | `{ "type": "markdown", "dir": "source/posts" }` |
 | Build-time HTTP API | `http` | `{ "type": "http", "url": "https://api.../x", "auth": { "env": "X_TOKEN" } }` |
 | Local or remote JSON file | `json` | `{ "type": "json", "file": "data/changelog.json" }` |
 | Local or remote CSV file | `csv` | `{ "type": "csv", "url": "https://.../x.csv", "delimiter": "," }` |
@@ -133,7 +133,7 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 {
   "version": 1,
   "sources": {
-    "landing": { "type": "markdown", "dir": "source/_landing" }
+    "landing": { "type": "markdown", "dir": "source/landing" }
   },
   "views": [
     { "name": "base", "type": "layout", "file": "base.html" },
@@ -149,8 +149,8 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 {
   "version": 1,
   "sources": {
-    "posts":    { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
-    "projects": { "type": "markdown", "dir": "source/_projects", "sort": { "field": "date", "order": "desc" } }
+    "posts":    { "type": "markdown", "dir": "source/posts", "sort": { "field": "date", "order": "desc" } },
+    "projects": { "type": "markdown", "dir": "source/projects", "sort": { "field": "date", "order": "desc" } }
   },
   "views": [
     { "name": "base",      "type": "layout", "file": "base.html" },
@@ -169,7 +169,7 @@ These are starting points. The model is open: combine sources, mix `for.each`/`f
 {
   "version": 1,
   "sources": {
-    "docs": { "type": "markdown", "dir": "source/_docs", "sort": { "field": "nav_order", "order": "asc" }, "tree": true }
+    "docs": { "type": "markdown", "dir": "source/docs", "sort": { "field": "nav_order", "order": "asc" }, "tree": true }
   },
   "views": [
     { "name": "base",      "type": "layout", "file": "base.html" },
@@ -224,7 +224,7 @@ A user wants a product catalog pulled from an API, with tag aggregation pages. T
 {
   "version": 1,
   "sources": {
-    "posts":      { "type": "markdown", "dir": "source/_posts", "sort": { "field": "date", "order": "desc" } },
+    "posts":      { "type": "markdown", "dir": "source/posts", "sort": { "field": "date", "order": "desc" } },
     "github":     { "type": "http", "url": "https://api.github.com/users/me/repos",
                     "auth": { "env": "GH_TOKEN" }, "map": { "slug": "name", "title": "full_name", "cover": "owner.avatar_url" } },
     "changelog":  { "type": "json", "file": "data/changelog.json" },
@@ -260,6 +260,7 @@ The AI must self-verify before writing the file:
 - [ ] Every `type=page` view references an existing layout name.
 - [ ] Every `type=page` view has `output`.
 - [ ] Every `for.each` / `for.paginate` references a source name that exists in `sources`.
+- [ ] Every markdown source `dir` uses `source/<name>` with no leading underscore in the child directory.
 - [ ] Every `for.paginate` sets `perPage`.
 - [ ] Every `auth.env` is a name only (no value); the user has been told which env var to set.
 - [ ] Every remote source has a `fallback` (defaults to `cache`).
@@ -271,7 +272,7 @@ If any check fails, fix and re-verify.
 
 ## GEO Note
 
-GEO outputs (`llms.txt`, `robots.txt`, per-page markdown mirror, JSON-LD) are **not declared in the manifest**. The engine emits them generically over the **markdown** sources. API / JSON / CSV / RSS / inline / derived items may appear in `llms.txt` link lists but have no markdown mirror (no source `.md` file). No `_geo/` directory; no separate authoring flow. See [`geo-conventions.md`](./geo-conventions.md).
+GEO outputs (`llms.txt`, `robots.txt`, per-page markdown mirror, JSON-LD) are **not declared in the manifest**. The engine emits them generically over the **markdown** sources. API / JSON / CSV / RSS / inline / derived items may appear in `llms.txt` link lists but have no markdown mirror (no source `.md` file). No `geo/` directory; no separate authoring flow. See [`geo-conventions.md`](./geo-conventions.md).
 
 ---
 
