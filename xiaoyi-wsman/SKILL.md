@@ -1,131 +1,125 @@
 ---
 name: xiaoyi-wsman
-version: 1.0.0
-description: 管理固定结构 workspace（每个项目子目录含 STATUS.md / AGENTS.md / README.md）下多个项目的阶段、进度、调整落实与审核测试情况。在用户调用 /xiaoyi-wsman 或提及"项目进度/项目阶段/项目纳管/workspace 状态/STATUS.md/列出所有项目"时加载。
+description: 管理代码与非代码项目组成的 workspace，以每个项目的 STATUS.md 为事实源，执行项目纳管、状态更新、组合视图、陈旧与阻塞检查、周度复盘及完成验证。在用户显式调用 /xiaoyi-wsman、提及 xiaoyi-wsman，或要求查看/更新项目进度、项目阶段、项目健康度、项目纳管、workspace 状态、STATUS.md、所有项目、周度项目复盘时使用。
 ---
 
 # xiaoyi-wsman
 
-When loaded, you manage a workspace of projects. Each project is a top-level subdirectory containing `STATUS.md` (state), `AGENTS.md` (AI guidance), and `README.md` (human docs).
+把项目文件作为长期记忆，不依赖对话记忆。以每个项目的 `STATUS.md` 为事实源；扫描结果是事实源的汇总，不替代事实源。
 
-## Workspace Root
+## 确定工作区
 
-Track the current workspace root in this conversation as `<ws_root>`. Before answering any status/listing question, confirm `<ws_root>`. If unset, ask the user.
+按以下顺序确定 `<ws_root>`：
 
-Persist `<ws_root>` to `<SKILL_DIR>/state.json` only when the user explicitly sets or switches it. Format:
+1. 使用用户明确指定的目录。
+2. 若当前目录或其父目录存在 `.xiaoyi-wsman.json`，使用该文件所在目录。
+3. 若当前目录包含多个项目目录，使用当前目录并说明判断依据。
+4. 仍无法确定时询问用户，不猜测路径。
+
+把持久配置写入 `<ws_root>/.xiaoyi-wsman.json`，不要向技能安装目录写入 `state.json` 或其他运行状态。
+
+## 项目事实模型
+
+使用以下项目类型：`code | content | research | learning | operations | other`。
+
+使用以下阶段：
+
+`idea -> planning -> active -> review -> done -> archived`
+
+`waiting` 和 `paused` 可从未完成阶段进入。旧值 `in-progress` 视为 `active`，并提示迁移。
+
+核心字段：
+
+- `health`: `green | yellow | red | unknown`
+- `priority`: `P0 | P1 | P2 | P3 | P4`
+- `progress`: 可选的 `0-100` 整数；没有客观依据时留空，不编造百分比
+- `next_action`: 一个明确、可执行的下一步
+- `blocked_by`: `waiting` 项目的等待对象或条件
+- `paused_reason`: `paused` 项目的暂停原因
+- `review_status`: `pending | passed | failed | not-applicable`
+- `verification_status`: `pending | passed | failed | not-applicable`
+
+只有完成标准已被验证，才能进入 `done`。`done` 要求 `verification_status: passed`，并要求 `review_status` 为 `passed` 或 `not-applicable`。测试是代码项目的验证方式之一，不是所有项目的统一要求。
+
+## 操作流程
+
+### 查看项目组合
+
+1. 每次状态、进度或项目列表请求都先运行扫描器：
+
+   ```bash
+   node <SKILL_DIR>/scripts/xiaoyi-wsman-scan.js "<ws_root>"
+   ```
+
+2. 需要结构化数据时添加 `--json`；只看异常时添加 `--issues-only`；审计忽略规则时添加 `--show-ignored`。
+3. 按阶段汇总，并优先展示 `error`、`warning`、红黄健康度、P0/P1 和已逾期项目。
+4. 用户询问单个项目时，继续读取其完整 `STATUS.md` 与 `AGENTS.md`。
+5. 不从记忆回答项目状态，不把计划或推断表述为已完成事实。
+
+### 纳管项目
+
+1. 确认项目目录与 `<ws_root>`。
+2. 只为缺失文件复制 `templates/STATUS.md`、`templates/AGENTS.md`、`templates/README.md`，替换 `{{PROJECT_NAME}}` 和 `{{TODAY}}`。
+3. 根据实际成熟度设置 `kind` 与 `stage`；无法判断的字段使用 `unknown` 或留空，并明确待确认项。
+4. 非一级子目录或工作区外项目写入 `.xiaoyi-wsman.json` 的 `projects`。
+5. 重新运行扫描器验证纳管结果。
+
+### 更新项目
+
+1. 开工前读取项目的 `STATUS.md` 与 `AGENTS.md`。
+2. 范围、目标或完成标准变化时，先在「调整记录」追加记录。
+3. 完成实质性工作后更新 frontmatter、进度概览、下一步、阻塞、调整记录和验证证据。
+4. 区分四类信息：已验证事实、用户陈述、AI 推断、下一步计划。推断不得直接升级为完成事实。
+5. 代码变化后记录实际执行的审核/测试命令与结果；未执行则保持 `pending`。
+6. 更新后重新扫描。Git 有未提交变化时说明影响，但不要擅自提交。
+
+### 周度复盘
+
+1. 用 `--json` 扫描完整组合。
+2. 检查陈旧项目、逾期复盘、阻塞、缺少下一步、阶段与验证不一致的项目。
+3. 对每个活跃项目确认：目标是否仍有效、最近事实、唯一下一步、阻塞、健康度和下次复盘日期。
+4. 只在用户确认或已有事实证据时修改状态；不确定项列为待确认。
+
+## 工作区配置
+
+在 `<ws_root>/.xiaoyi-wsman.json` 中配置：
 
 ```json
-{ "ws_root": "/abs/path/to/workspace" }
+{
+  "discover_top_level": true,
+  "projects": [
+    { "path": "./nested/project" },
+    { "path": "/absolute/path/to/external-project", "name": "external-project" }
+  ],
+  "ignore": ["temp-*", "archive/"],
+  "stale_days": {
+    "idea": 60,
+    "planning": 30,
+    "active": 14,
+    "waiting": 30,
+    "review": 14
+  }
+}
 ```
 
-Resolve `~` and relative paths to absolute before writing. Echo the absolute path back to the user and wait for confirmation before persisting. If `state.json` exists at the start of a new session, read it and confirm with the user.
+- `discover_top_level` 默认为 `true`。
+- `projects` 接受路径字符串或 `{ "path", "name", "enabled" }`；相对路径基于 `<ws_root>`。
+- 显式项目可位于嵌套目录或工作区外；`enabled: false` 可暂时停用。
+- `ignore` 作用于自动发现的一级目录。隐藏目录和常见构建目录始终忽略。
+- 继续读取旧 `.xiaoyi-wsman.config.json` 的 `ignore`，但提示迁移。
 
-`<SKILL_DIR>` is this skill's installed directory path (varies by installation).
-
-## Five Stages
-
-`idea → in-progress → review → done`, with `paused` reachable from any stage.
-
-- `done` requires `reviewed: true` AND `tested: true` in `STATUS.md` frontmatter.
-- "Reviewed/tested" means genuinely verified, not merely "code runs".
-- `paused` projects need not update `last_updated`, but must document the reason.
-
-## Workflow
-
-### Listing / Status / Progress Questions
-
-1. Run the scanner:
-   ```bash
-   node <SKILL_DIR>/scripts/xiaoyi-wsman-scan.js "$WS_ROOT"
-   ```
-   Add `--json` for structured consumption or `--issues-only` for exception-only output. The scanner is read-only.
-
-2. Present results grouped by stage (idea / in-progress / review / done / paused).
-
-3. For each project marked `!!` (has issues), list every issue on a separate line.
-
-4. When the user asks about a specific project by name, open its `STATUS.md` for full context — the scanner shows only frontmatter, the body has more.
-
-5. Never answer status questions without running the scanner first. Do not invent statuses from memory.
-
-### Onboarding a Project ("纳管 / 初始化")
-
-1. Confirm `<ws_root>` and that the target directory exists. Ask if not.
-
-2. For each missing file, copy from the template and substitute placeholders:
-   - `<SKILL_DIR>/templates/{STATUS,AGENTS,README}.md`
-   - Replace `{{PROJECT_NAME}}` with the directory name.
-   - Replace `{{TODAY}}` with today's `YYYY-MM-DD`.
-
-3. Set the initial `stage` based on observed maturity:
-   - Empty directory or only `方案.md` → `idea`.
-   - Existing code without `STATUS.md` → conservatively `in-progress` (state your assumption to the user).
-
-4. After onboarding, re-run the scanner to verify.
-
-### Working Inside a Project
-
-1. Before any work, read both `STATUS.md` and `AGENTS.md` of the project.
-
-2. When the work changes scope or requirements, immediately append a row to the 「调整记录」section of `STATUS.md`, even before implementation.
-
-3. After substantive work, force-write `STATUS.md`:
-   - Update frontmatter: `stage`, `progress` (0–100), `last_updated`, `reviewed`, `tested`.
-   - Update each pending 「调整记录」 entry with status: 已落实 / 部分落实 / 未落实.
-   - Sync 「进度概览」 and 「待办 / 阻塞」.
-
-4. If code changed and git has uncommitted changes when you update `STATUS.md`, remind the user to commit.
-
-### Switching Workspace
-
-Echo the new absolute path and write `state.json`. See "Workspace Root" above.
-
-## Scanner Reference
+## 扫描器
 
 ```bash
 node <SKILL_DIR>/scripts/xiaoyi-wsman-scan.js [WORKSPACE_ROOT] [--json] [--issues-only] [--show-ignored]
 ```
 
-- `WORKSPACE_ROOT` defaults to the current directory.
-- `--json` outputs a JSON array of `{name, stage, progress, last_updated, reviewed, tested, git, issues}`.
-- `--issues-only` filters to projects with at least one issue.
-- `--show-ignored` appends a list of skipped directories with the reason and matching rule.
-- `WSMAN_STALE_DAYS` (default 30) sets the staleness threshold.
+扫描器必须保持只读。`--json` 输出包含 `workspace`、`projects`、`summary`、`ignored` 和 `config_issues` 的对象。诊断使用 `error | warning | info`，并提供稳定的 `code`。
 
-The scanner detects: missing files, invalid stage, `done` projects with `reviewed`/`tested` not true, `done` projects with dirty git, stale `STATUS.md`, and git-dirty projects with stale status.
+## 真实性约束
 
-## Ignoring Subdirectories
-
-The scanner skips subdirectories that are not real projects. Three layers of filtering apply, in order:
-
-1. **Hidden directories** (names starting with `.`) — always skipped.
-2. **Built-in defaults** — these directory names are always skipped without configuration:
-   `node_modules`, `.git`, `.next`, `dist`, `build`, `.cache`, `.venv`, `venv`, `__pycache__`, `.DS_Store`, `target`, `Pods`, `.gradle`, `.idea`, `.vscode`.
-3. **User-configured ignore list** — create `<WORKSPACE_ROOT>/.xiaoyi-wsman.config.json`:
-
-   ```json
-   {
-     "ignore": ["junk-*", "scripts/", "**/playground"]
-   }
-   ```
-
-   Pattern syntax:
-   - `*` matches any chars except `/` within one segment (e.g. `junk-*` matches `junk-build` but not `junk/nested`).
-   - `**` matches across segments (e.g. `**/playground` matches `playground`, `a/playground`, `a/b/playground`).
-   - Trailing `/` or `/**` switches to **prefix match**: the pattern is treated as a directory prefix and any descendant is skipped. E.g. `scripts/` matches `scripts` and `scripts/dev/anything`.
-   - `?` matches a single character (e.g. `pro?ect` matches `project` and `prosect`).
-
-   Invalid patterns are skipped with a warning; the scan continues.
-
-Use `--show-ignored` to verify what is being skipped and why during development.
-
-## Truthfulness
-
-Statuses must reflect reality. Do not mark `reviewed: true` if you have not actually reviewed, or `tested: true` without testing. The scanner will catch false claims when `git` is dirty or other artifacts don't match.
-
-## Do Not
-
-- Do not invent a workspace root. Ask if unknown.
-- Do not write `source/` of managed projects (except onboarding) without explicit user direction.
-- Do not modify `state.json` outside the explicit set/switch flow.
-- Do not answer status questions without first running the scanner.
+- 不虚构工作区、进度、验证、阻塞解除或完成状态。
+- 不因为 Git clean 就认为项目已完成，也不因为有文件改动就推断业务进展。
+- 不把 `progress: 100` 等同于 `done`。
+- 不在未读取事实源、未运行扫描器时回答状态问题。
+- 不自动修改被管理项目的业务文件；只在用户要求执行项目工作或纳管时写入。

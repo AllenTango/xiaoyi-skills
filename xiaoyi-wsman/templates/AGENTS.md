@@ -1,23 +1,23 @@
-# AGENTS — {{PROJECT_NAME}}
+# AGENTS - {{PROJECT_NAME}}
 
-本文件为 AI 在 **{{PROJECT_NAME}}** 项目内工作时的指导。进入本项目，先读本文件与 `STATUS.md`。
+进入本项目后先读取 `STATUS.md`，把它作为项目状态的唯一事实源。
 
-## 强制约定（wsman 管理）
+## xiaoyi-wsman 约定
 
-1. **先读状态**：开始任何工作前，先读 `STATUS.md` 了解当前阶段、进度、未落实的调整与阻塞。
-2. **后写状态**：完成任何实质性工作后，**必须**回写 `STATUS.md`：
-   - 更新 frontmatter（`stage` / `progress` / `last_updated` / `reviewed` / `tested`）；
-   - 在「调整记录」追加本次变更及其落实状态；
-   - 同步「进度概览」「待办 / 阻塞」。
-3. **阶段流转**：idea → in-progress → review → done；可随时进入 paused。标记 `done` 前，`reviewed` 与 `tested` 必须为 `true`。
-4. **诚实**：状态须反映真实情况。未测试就写未测试，不得为求好看而虚标。
+1. 开工前读取 `STATUS.md` 与本文件。
+2. 范围、目标或完成标准变化时，先更新 `STATUS.md` 的「调整记录」。
+3. 完成实质性工作后更新状态字段、已验证事实、下一步、阻塞和验证证据。
+4. 区分已验证事实、用户陈述、AI 推断和下一步计划，不把推断写成完成事实。
+5. 没有客观依据时将 `progress` 留空。未审核或未验证时保持 `pending`。
+6. `done` 要求 `verification_status: passed`，且 `review_status` 为 `passed` 或 `not-applicable`。
 
 ## 项目信息
 
-- 技术栈：<!-- 待填写 -->
-- 运行方式：<!-- 待填写 -->
-- 关键约定 / 注意事项：<!-- 待填写 -->
+- 项目类型：<!-- code/content/research/learning/operations/other -->
+- 主要工具或技术栈：<!-- 待填写 -->
+- 运行或工作方式：<!-- 待填写 -->
+- 关键约定：<!-- 待填写 -->
 
-## 测试 / 审核方式
+## 审核与验证方式
 
-<!-- 如何验证本项目：测试命令、检查清单等 -->
+<!-- 写明完成标准、检查清单、测试命令或人工验收方式。 -->

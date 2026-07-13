@@ -1,416 +1,461 @@
 #!/usr/bin/env node
-/**
- * xiaoyi-wsman-scan.js — 扫描 workspace，输出准确的项目状态全局视图。
- *
- * 替代旧的 bash + PowerShell 双脚本。
- * 行为对齐：相同的输入/输出/校验规则。
- * 只读：本脚本不修改任何文件。
- *
- * 用法:
- *   node xiaoyi-wsman-scan.js [WORKSPACE_ROOT] [--json] [--issues-only] [--show-ignored]
- *
- *   WORKSPACE_ROOT   被管理的 workspace 根目录。省略时默认当前目录。
- *   --json           以 JSON 数组输出（供程序/AI 结构化消费）。
- *   --issues-only    只输出存在异常的项目。
- *   --show-ignored   在文本输出底部列出被忽略的子目录及其匹配规则。
- *
- * 项目识别规则:
- *   WORKSPACE_ROOT 下的每个一级子目录视为一个项目。
- *   隐藏目录（以 . 开头）默认被忽略。
- *   用户可通过 WORKSPACE_ROOT/.xiaoyi-wsman.config.json 中的 `ignore` 字段添加额外忽略规则（glob）。
- *
- * 每个项目读取其 STATUS.md 的 YAML frontmatter:
- *   project / stage / progress / last_updated / reviewed / tested
- * 合法 stage: idea | in-progress | review | done | paused
- *
- * 一致性校验（标记为 ISSUE）:
- *   - 缺少 STATUS.md / AGENTS.md / README.md
- *   - stage 缺失或非法
- *   - stage=done 但 git 工作区有未提交改动
- *   - stage=done 但 reviewed/tested 不为 true
- *   - last_updated 超过 STALE_DAYS（默认 30）天
- *   - git 有未提交改动但 STATUS.md 长期未更新
- */
 
-import { readdirSync, statSync, readFileSync, existsSync } from 'fs';
-import { join, basename, resolve } from 'path';
-import { execSync } from 'child_process';
-import { argv, cwd, env, exit } from 'process';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { argv, cwd, env, exit } from 'node:process';
 
-const STALE_DAYS_DEFAULT = 30;
-const VALID_STAGES = new Set(['idea', 'in-progress', 'review', 'done', 'paused']);
-
-// ---------- 内置默认忽略（无需用户配置） ----------
+const CONFIG_NAME = '.xiaoyi-wsman.json';
+const LEGACY_CONFIG_NAME = '.xiaoyi-wsman.config.json';
+const VALID_KINDS = new Set(['code', 'content', 'research', 'learning', 'operations', 'other']);
+const VALID_STAGES = new Set(['idea', 'planning', 'active', 'waiting', 'review', 'paused', 'done', 'archived']);
+const VALID_HEALTH = new Set(['green', 'yellow', 'red', 'unknown']);
+const VALID_PRIORITY = new Set(['P0', 'P1', 'P2', 'P3', 'P4']);
+const VALID_CHECK_STATUS = new Set(['pending', 'passed', 'failed', 'not-applicable']);
+const STAGE_ORDER = ['active', 'waiting', 'review', 'planning', 'idea', 'paused', 'done', 'archived', 'unknown'];
+const DEFAULT_STALE_DAYS = { idea: 60, planning: 30, active: 14, waiting: 30, review: 14 };
 const DEFAULT_IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  '.next',
-  'dist',
-  'build',
-  '.cache',
-  '.venv',
-  'venv',
-  '__pycache__',
-  '.DS_Store',
-  'target',     // Java/Rust
-  'Pods',       // iOS
-  '.gradle',
-  '.idea',
-  '.vscode',
+  'node_modules', '.git', '.next', 'dist', 'build', '.cache', '.venv', 'venv',
+  '__pycache__', 'target', 'Pods', '.gradle', '.idea', '.vscode'
 ]);
-
-// ---------- 参数解析 ----------
+const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
+const HEALTH_RANK = { red: 0, yellow: 1, unknown: 2, green: 3 };
 
 function printUsage() {
   console.log(`用法: node xiaoyi-wsman-scan.js [WORKSPACE_ROOT] [--json] [--issues-only] [--show-ignored]
 
-扫描 workspace，输出准确的项目状态全局视图。
+只读扫描代码与非代码项目，输出项目组合状态和一致性诊断。
 
 参数:
-  WORKSPACE_ROOT    被管理的 workspace 根目录。省略时默认当前目录。
-  --json            以 JSON 数组输出。
-  --issues-only     只输出存在异常的项目。
-  --show-ignored    在文本输出底部列出被忽略的子目录及其匹配规则。
-  -h, --help        显示帮助。
+  WORKSPACE_ROOT    workspace 根目录；默认当前目录
+  --json            输出结构化 JSON 对象
+  --issues-only     文本和 JSON 中只展示有诊断的项目
+  --show-ignored    文本输出中列出被忽略目录
+  -h, --help        显示帮助
 
-环境变量:
-  WSMAN_STALE_DAYS  多少天未更新视为陈旧（默认 30）。
-
-忽略规则（按优先级合并）:
-  1. 内置默认：node_modules / .git / dist / build / .next / venv / __pycache__ 等
-  2. .xiaoyi-wsman.config.json 中的 ignore 字段（glob 数组）
-  3. 隐藏目录（. 开头）
-
-  配置示例 .xiaoyi-wsman.config.json:
-  {
-    "ignore": ["ssg-demo-*", "scripts/dev", "archive"]
-  }
+配置文件: WORKSPACE_ROOT/${CONFIG_NAME}
+环境变量: WSMAN_STALE_DAYS 可覆盖所有活跃阶段的陈旧天数
 `);
 }
 
-const args = argv.slice(2);
-let outputJson = false;
-let issuesOnly = false;
-let showIgnored = false;
-let workspaceRoot = '';
-
-for (const arg of args) {
-  if (arg === '--json') outputJson = true;
-  else if (arg === '--issues-only') issuesOnly = true;
-  else if (arg === '--show-ignored') showIgnored = true;
-  else if (arg === '-h' || arg === '--help') { printUsage(); exit(0); }
-  else if (arg.startsWith('-')) {
-    console.error(`未知参数: ${arg}`);
-    exit(2);
-  } else if (!workspaceRoot) {
-    workspaceRoot = arg;
-  } else {
-    console.error(`未知参数: ${arg}`);
-    exit(2);
-  }
-}
-
-if (!workspaceRoot) workspaceRoot = cwd();
-workspaceRoot = resolve(workspaceRoot);
-
-if (!existsSync(workspaceRoot) || !statSync(workspaceRoot).isDirectory()) {
-  console.error(`错误: workspace 根目录不存在: ${workspaceRoot}`);
-  exit(1);
-}
-
-const staleDays = parseInt(env.WSMAN_STALE_DAYS, 10) || STALE_DAYS_DEFAULT;
-const nowEpoch = Math.floor(Date.now() / 1000);
-
-// ---------- 忽略配置 ----------
-
-/**
- * Read .xiaoyi-wsman.config.json from workspace root and extract `ignore` array.
- * Returns empty array if file missing or malformed (logs warning).
- */
-function loadIgnoreConfig(root) {
-  const cfgPath = join(root, '.xiaoyi-wsman.config.json');
-  if (!existsSync(cfgPath)) return [];
-  try {
-    const raw = JSON.parse(readFileSync(cfgPath, 'utf-8'));
-    if (!raw || !Array.isArray(raw.ignore)) return [];
-    return raw.ignore.filter(p => typeof p === 'string' && p.trim().length > 0);
-  } catch (e) {
-    console.warn(`[warn] ${cfgPath} 解析失败: ${e.message}（已忽略配置）`);
-    return [];
-  }
-}
-
-/**
- * Convert a glob-like pattern to a RegExp.
- * Supports:
- *   *       → [^/]*
- *   **      → .*
- *   ?       → .
- *   [abc]   → character class (passthrough)
- *   patterns ending with / or /** → prefix match (any descendant)
- */
-function globToRegex(pattern) {
-  // strip trailing /** or / → prefix match
-  let prefixMode = false;
-  let p = pattern;
-  if (p.endsWith('/**') || p.endsWith('/')) {
-    p = p.replace(/\/?(\*\*)?$/, '');
-    prefixMode = true;
-  }
-  // escape regex specials except * ? [ ]
-  p = p.replace(/[.+^${}()|\\]/g, '\\$&');
-  // ** must be replaced before single *
-  p = p.replace(/\*\*/g, '\x00DOUBLESTAR\x00');
-  p = p.replace(/\*/g, '[^/]*');
-  p = p.replace(/\x00DOUBLESTAR\x00/g, '.*');
-  p = p.replace(/\?/g, '.');
-  if (prefixMode) return new RegExp('^' + p + '(/.*)?$');
-  return new RegExp('^' + p + '$');
-}
-
-/**
- * Returns the rule that caused a directory to be skipped, or null.
- * Checked order:
- *   1. Hidden (starts with .)
- *   2. DEFAULT_IGNORE_DIRS
- *   3. User-configured ignore patterns
- */
-function ignoredReason(name, userIgnoreGlobs) {
-  if (name.startsWith('.')) return { reason: 'hidden (starts with .)', rule: '<built-in: hidden>' };
-  if (DEFAULT_IGNORE_DIRS.has(name)) {
-    return { reason: '内置默认忽略', rule: `<built-in: ${name}>` };
-  }
-  for (const pattern of userIgnoreGlobs) {
-    const re = globToRegex(pattern);
-    if (re.test(name)) {
-      return { reason: '用户配置忽略', rule: `config.ignore: "${pattern}"` };
+function parseArgs(args) {
+  const options = { workspaceRoot: '', json: false, issuesOnly: false, showIgnored: false };
+  for (const arg of args) {
+    if (arg === '--json') options.json = true;
+    else if (arg === '--issues-only') options.issuesOnly = true;
+    else if (arg === '--show-ignored') options.showIgnored = true;
+    else if (arg === '-h' || arg === '--help') {
+      printUsage();
+      exit(0);
+    } else if (arg.startsWith('-')) {
+      console.error(`未知参数: ${arg}`);
+      exit(2);
+    } else if (!options.workspaceRoot) {
+      options.workspaceRoot = arg;
+    } else {
+      console.error(`多余参数: ${arg}`);
+      exit(2);
     }
+  }
+  options.workspaceRoot = resolve(options.workspaceRoot || cwd());
+  return options;
+}
+
+function issue(severity, code, message) {
+  return { severity, code, message };
+}
+
+function readJson(path, configIssues) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    configIssues.push(issue('error', 'config-invalid-json', `${path} 解析失败: ${error.message}`));
+    return {};
+  }
+}
+
+function globToRegex(pattern) {
+  let prefix = false;
+  let value = pattern.trim().replaceAll('\\', '/');
+  if (value.endsWith('/**')) {
+    value = value.slice(0, -3);
+    prefix = true;
+  } else if (value.endsWith('/')) {
+    value = value.slice(0, -1);
+    prefix = true;
+  }
+  let source = '';
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index];
+    if (char === '*' && value[index + 1] === '*') {
+      source += '.*';
+      index++;
+    } else if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else source += char.replace(/[|\\{}()[\]^$+*.]/g, '\\$&');
+  }
+  return new RegExp(`^${source}${prefix ? '(?:/.*)?' : ''}$`);
+}
+
+function normalizeConfig(root) {
+  const configIssues = [];
+  const configPath = join(root, CONFIG_NAME);
+  const legacyPath = join(root, LEGACY_CONFIG_NAME);
+  let raw = {};
+
+  if (existsSync(configPath)) raw = readJson(configPath, configIssues);
+  else if (existsSync(legacyPath)) {
+    raw = readJson(legacyPath, configIssues);
+    configIssues.push(issue('info', 'legacy-config', `请将 ${LEGACY_CONFIG_NAME} 迁移为 ${CONFIG_NAME}`));
+  }
+
+  const config = {
+    discoverTopLevel: raw.discover_top_level !== false,
+    projects: [],
+    ignore: [],
+    ignoreMatchers: [],
+    staleDays: { ...DEFAULT_STALE_DAYS }
+  };
+
+  if (raw.projects !== undefined && !Array.isArray(raw.projects)) {
+    configIssues.push(issue('error', 'config-projects-type', 'projects 必须是数组'));
+  } else {
+    for (const [index, entry] of (raw.projects || []).entries()) {
+      const item = typeof entry === 'string' ? { path: entry } : entry;
+      if (!item || typeof item.path !== 'string' || !item.path.trim()) {
+        configIssues.push(issue('error', 'config-project-invalid', `projects[${index}] 缺少有效 path`));
+        continue;
+      }
+      if (item.enabled === false) continue;
+      config.projects.push({
+        path: isAbsolute(item.path) ? resolve(item.path) : resolve(root, item.path),
+        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : ''
+      });
+    }
+  }
+
+  if (raw.ignore !== undefined && !Array.isArray(raw.ignore)) {
+    configIssues.push(issue('error', 'config-ignore-type', 'ignore 必须是字符串数组'));
+  } else {
+    for (const [index, pattern] of (raw.ignore || []).entries()) {
+      if (typeof pattern !== 'string' || !pattern.trim()) {
+        configIssues.push(issue('warning', 'config-ignore-invalid', `ignore[${index}] 不是有效字符串`));
+        continue;
+      }
+      config.ignore.push(pattern);
+      config.ignoreMatchers.push({ pattern, regex: globToRegex(pattern) });
+    }
+  }
+
+  if (Number.isInteger(raw.stale_days) && raw.stale_days > 0) {
+    for (const stage of Object.keys(config.staleDays)) config.staleDays[stage] = raw.stale_days;
+  } else if (raw.stale_days && typeof raw.stale_days === 'object' && !Array.isArray(raw.stale_days)) {
+    for (const [stage, days] of Object.entries(raw.stale_days)) {
+      if (!VALID_STAGES.has(stage) || !Number.isInteger(days) || days <= 0) {
+        configIssues.push(issue('warning', 'config-stale-invalid', `忽略无效 stale_days.${stage}: ${days}`));
+      } else config.staleDays[stage] = days;
+    }
+  } else if (raw.stale_days !== undefined) {
+    configIssues.push(issue('warning', 'config-stale-type', 'stale_days 必须是正整数或阶段到天数的对象'));
+  }
+
+  const environmentDays = Number.parseInt(env.WSMAN_STALE_DAYS, 10);
+  if (Number.isInteger(environmentDays) && environmentDays > 0) {
+    for (const stage of Object.keys(config.staleDays)) config.staleDays[stage] = environmentDays;
+  }
+  return { config, configIssues, configPath: existsSync(configPath) ? configPath : null };
+}
+
+function ignoredReason(name, config) {
+  if (name.startsWith('.')) return { reason: '隐藏目录', rule: '<built-in:hidden>' };
+  if (DEFAULT_IGNORE_DIRS.has(name)) return { reason: '内置默认忽略', rule: `<built-in:${name}>` };
+  for (const matcher of config.ignoreMatchers) {
+    if (matcher.regex.test(name)) return { reason: '用户配置忽略', rule: matcher.pattern };
   }
   return null;
 }
 
-// ---------- 工具函数 ----------
+function discoverProjects(root, config, configIssues) {
+  const projects = new Map();
+  const ignored = [];
 
-/**
- * 从 STATUS.md 的 YAML frontmatter 中提取某个 key 的值（首行 --- 与 次行 --- 之间）。
- * 仅支持简单 scalar 字符串/数字，不解析嵌套结构。
- */
-function readFrontmatterValue(filePath, key) {
-  if (!existsSync(filePath)) return '';
-  const content = readFileSync(filePath, 'utf-8');
-  const lines = content.split(/\r?\n/);
-  let inFm = false;
-  for (const line of lines) {
-    if (!inFm) {
-      if (/^---\s*$/.test(line)) inFm = true;
+  if (config.discoverTopLevel) {
+    for (const entry of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory()) continue;
+      const ignoredBy = ignoredReason(entry.name, config);
+      if (ignoredBy) {
+        ignored.push({ path: join(root, entry.name), name: entry.name, ...ignoredBy });
+        continue;
+      }
+      const path = join(root, entry.name);
+      projects.set(path, { path, configured_name: '', source: 'discovered' });
+    }
+  }
+
+  for (const configured of config.projects) {
+    const previous = projects.get(configured.path);
+    projects.set(configured.path, {
+      path: configured.path,
+      configured_name: configured.name || previous?.configured_name || '',
+      source: previous ? 'discovered+configured' : 'configured'
+    });
+  }
+
+  if (!config.discoverTopLevel && config.projects.length === 0) {
+    configIssues.push(issue('warning', 'no-project-sources', 'discover_top_level=false 且未配置 projects'));
+  }
+  return { projectEntries: [...projects.values()], ignored };
+}
+
+function parseFrontmatter(filePath) {
+  if (!existsSync(filePath)) return { values: {}, diagnostics: [] };
+  const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
+  const diagnostics = [];
+  if (lines[0]?.trim() !== '---') {
+    return { values: {}, diagnostics: [issue('error', 'frontmatter-missing', 'STATUS.md 缺少起始 frontmatter 分隔符')] };
+  }
+  const values = {};
+  let closed = false;
+  for (let index = 1; index < lines.length; index++) {
+    const line = lines[index];
+    if (line.trim() === '---') {
+      closed = true;
+      break;
+    }
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    const separator = line.indexOf(':');
+    if (separator <= 0) {
+      diagnostics.push(issue('warning', 'frontmatter-line-invalid', `frontmatter 第 ${index + 1} 行不是 key: value`));
       continue;
     }
-    if (/^---\s*$/.test(line)) return '';
-    if (/^\s*$/.test(line)) continue;
-    const idx = line.indexOf(':');
-    if (idx > 0) {
-      const name = line.substring(0, idx).trim();
-      let val = line.substring(idx + 1).trim();
-      // 去除首尾引号
-      val = val.replace(/^["']|["']$/g, '');
-      if (name === key) return val;
+    const key = line.slice(0, separator).trim();
+    let value = line.slice(separator + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
     }
+    if (Object.hasOwn(values, key)) diagnostics.push(issue('warning', 'frontmatter-duplicate-key', `frontmatter 字段重复: ${key}`));
+    values[key] = value;
   }
-  return '';
+  if (!closed) diagnostics.push(issue('error', 'frontmatter-unclosed', 'STATUS.md frontmatter 未闭合'));
+  return { values, diagnostics };
 }
 
-/**
- * 计算 YYYY-MM-DD 距今天数；非法返回空字符串。
- */
-function daysSince(dateStr) {
-  if (!dateStr) return '';
-  const epoch = Math.floor(new Date(dateStr).getTime() / 1000);
-  if (isNaN(epoch)) return '';
-  return Math.floor((nowEpoch - epoch) / 86400);
+function parseDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date;
 }
 
-/**
- * 检测目录是否为 git 仓库（或位于某个 git 仓库内）且有未提交改动。
- * 返回 'clean' | 'dirty' | 'no-git'
- */
-function getGitDirty(dir) {
+function daysSince(date) {
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.floor((todayUtc - date.getTime()) / 86400000);
+}
+
+function getGitState(projectPath) {
   try {
-    execSync(`git -C "${dir}" rev-parse --is-inside-work-tree`, { stdio: ['pipe', 'pipe', 'pipe'] });
+    execFileSync('git', ['-C', projectPath, 'rev-parse', '--is-inside-work-tree'], { stdio: 'ignore' });
+    const output = execFileSync(
+      'git', ['-C', projectPath, 'status', '--porcelain', '--untracked-files=normal', '--', '.'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    return output.trim() ? 'dirty' : 'clean';
   } catch {
     return 'no-git';
   }
-  try {
-    const status = execSync(`git -C "${dir}" status --porcelain`, { encoding: 'utf-8' });
-    return status.trim() ? 'dirty' : 'clean';
-  } catch {
-    return 'no-git';
-  }
 }
 
-/**
- * JSON 字符串转义。
- */
-function jsonEscape(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+function normalizedStage(rawStage, diagnostics) {
+  if (rawStage === 'in-progress') {
+    diagnostics.push(issue('info', 'legacy-stage', 'stage=in-progress 已按 active 处理，请迁移字段'));
+    return 'active';
+  }
+  if (!rawStage) {
+    diagnostics.push(issue('error', 'stage-missing', 'stage 缺失'));
+    return 'unknown';
+  }
+  if (!VALID_STAGES.has(rawStage)) {
+    diagnostics.push(issue('error', 'stage-invalid', `stage 非法: ${rawStage}`));
+    return 'unknown';
+  }
+  return rawStage;
 }
 
-// ---------- 扫描 ----------
-
-const userIgnoreGlobs = loadIgnoreConfig(workspaceRoot);
-
-const subdirs = readdirSync(workspaceRoot, { withFileTypes: true })
-  .filter(d => d.isDirectory())
-  .map(d => d.name)
-  .sort();
-
-const keptDirs = [];
-const ignoredDirs = [];
-
-for (const name of subdirs) {
-  const reason = ignoredReason(name, userIgnoreGlobs);
-  if (reason) {
-    ignoredDirs.push({ name, ...reason });
-  } else {
-    keptDirs.push(name);
+function checkEnum(values, key, validValues, diagnostics, fallback = '') {
+  const value = values[key];
+  if (!value) {
+    diagnostics.push(issue('warning', `${key}-missing`, `${key} 缺失`));
+    return fallback;
   }
+  if (!validValues.has(value)) {
+    diagnostics.push(issue('error', `${key}-invalid`, `${key} 非法: ${value}`));
+    return fallback;
+  }
+  return value;
 }
 
-let total = 0;
-let issueCount = 0;
-let countIdea = 0;
-let countInProgress = 0;
-let countReview = 0;
-let countDone = 0;
-let countPaused = 0;
-let countUnknown = 0;
-
-const jsonItems = [];
-const textRows = [];
-
-for (const name of keptDirs) {
-  total++;
-  const dirPath = join(workspaceRoot, name);
-  const statusFile = join(dirPath, 'STATUS.md');
-  const issues = [];
-
-  // 缺失文件检查
-  if (!existsSync(join(dirPath, 'STATUS.md'))) issues.push('缺少 STATUS.md');
-  if (!existsSync(join(dirPath, 'AGENTS.md'))) issues.push('缺少 AGENTS.md');
-  if (!existsSync(join(dirPath, 'README.md'))) issues.push('缺少 README.md');
-
-  // 读取 frontmatter
-  const project = readFrontmatterValue(statusFile, 'project') || name;
-  let stage = readFrontmatterValue(statusFile, 'stage');
-  const progress = readFrontmatterValue(statusFile, 'progress');
-  const lastUpdated = readFrontmatterValue(statusFile, 'last_updated');
-  const reviewedRaw = readFrontmatterValue(statusFile, 'reviewed');
-  const testedRaw = readFrontmatterValue(statusFile, 'tested');
-  const reviewed = reviewedRaw === 'true';
-  const tested = testedRaw === 'true';
-
-  // stage 校验
-  if (!stage) {
-    issues.push('stage 缺失');
-  } else if (!VALID_STAGES.has(stage)) {
-    issues.push(`stage 非法: ${stage}`);
-    stage = 'unknown';
+function scanProject(entry, config, workspaceRoot) {
+  const diagnostics = [];
+  if (!existsSync(entry.path) || !statSync(entry.path).isDirectory()) {
+    diagnostics.push(issue('error', 'project-path-missing', `项目目录不存在: ${entry.path}`));
+    return {
+      name: entry.configured_name || basename(entry.path), path: entry.path, source: entry.source,
+      kind: 'unknown', stage: 'unknown', health: 'unknown', priority: 'P4', progress: '',
+      last_updated: '', next_review: '', next_action: '', blocked_by: '', paused_reason: '',
+      review_status: '', verification_status: '', git: 'no-git', issues: diagnostics
+    };
   }
 
-  // git 状态
-  const git = getGitDirty(dirPath);
+  const statusPath = join(entry.path, 'STATUS.md');
+  if (!existsSync(statusPath)) diagnostics.push(issue('error', 'status-missing', '缺少 STATUS.md'));
+  if (!existsSync(join(entry.path, 'AGENTS.md'))) diagnostics.push(issue('warning', 'agents-missing', '缺少 AGENTS.md'));
+  if (!existsSync(join(entry.path, 'README.md'))) diagnostics.push(issue('warning', 'readme-missing', '缺少 README.md'));
 
-  // 陈旧检查
-  const stale = daysSince(lastUpdated);
-  if (lastUpdated && stale !== '' && stale > staleDays) {
-    issues.push(`last_updated 距今 ${stale} 天（> ${staleDays}）`);
+  const parsed = parseFrontmatter(statusPath);
+  diagnostics.push(...parsed.diagnostics);
+  const values = parsed.values;
+  const stage = normalizedStage(values.stage, diagnostics);
+  const kind = checkEnum(values, 'kind', VALID_KINDS, diagnostics, 'unknown');
+  const health = checkEnum(values, 'health', VALID_HEALTH, diagnostics, 'unknown');
+  const priority = checkEnum(values, 'priority', VALID_PRIORITY, diagnostics, 'P4');
+
+  let progress = values.progress || '';
+  if (progress && (!/^\d+$/.test(progress) || Number(progress) < 0 || Number(progress) > 100)) {
+    diagnostics.push(issue('error', 'progress-invalid', `progress 必须为空或 0-100 整数: ${progress}`));
+  } else if (progress) progress = Number(progress);
+
+  const lastUpdated = parseDate(values.last_updated);
+  if (!values.last_updated) diagnostics.push(issue('error', 'last-updated-missing', 'last_updated 缺失'));
+  else if (!lastUpdated) diagnostics.push(issue('error', 'last-updated-invalid', `last_updated 日期非法: ${values.last_updated}`));
+  else if (config.staleDays[stage] && daysSince(lastUpdated) > config.staleDays[stage]) {
+    diagnostics.push(issue('warning', 'status-stale', `状态已 ${daysSince(lastUpdated)} 天未更新，阈值为 ${config.staleDays[stage]} 天`));
   }
 
-  // git 脏 + 长期未更新联动
-  if (git === 'dirty' && lastUpdated && stale !== '' && stale > staleDays) {
-    issues.push(`git 有未提交改动且 STATUS.md 长期未更新（${stale} 天）`);
+  const nextReview = parseDate(values.next_review);
+  if (values.next_review && !nextReview) diagnostics.push(issue('error', 'next-review-invalid', `next_review 日期非法: ${values.next_review}`));
+  else if (['planning', 'active', 'waiting', 'review'].includes(stage) && !values.next_review) {
+    diagnostics.push(issue('warning', 'next-review-missing', `${stage} 项目缺少 next_review`));
+  } else if (nextReview && !['done', 'archived'].includes(stage) && daysSince(nextReview) > 0) {
+    diagnostics.push(issue('warning', 'review-overdue', `项目复盘已逾期 ${daysSince(nextReview)} 天`));
   }
 
-  // done 阶段强校验
+  if (['planning', 'active', 'waiting', 'review'].includes(stage) && !values.next_action) {
+    diagnostics.push(issue('warning', 'next-action-missing', `${stage} 项目缺少 next_action`));
+  }
+  if (stage === 'waiting' && !values.blocked_by) diagnostics.push(issue('error', 'blocked-by-missing', 'waiting 项目缺少 blocked_by'));
+  if (stage === 'paused' && !values.paused_reason) diagnostics.push(issue('error', 'paused-reason-missing', 'paused 项目缺少 paused_reason'));
+
+  let reviewStatus = values.review_status || '';
+  let verificationStatus = values.verification_status || '';
+  if (!reviewStatus && values.reviewed) {
+    reviewStatus = values.reviewed === 'true' ? 'passed' : 'pending';
+    diagnostics.push(issue('info', 'legacy-reviewed', 'reviewed 已兼容读取，请迁移为 review_status'));
+  }
+  if (!verificationStatus && values.tested) {
+    verificationStatus = values.tested === 'true' ? 'passed' : 'pending';
+    diagnostics.push(issue('info', 'legacy-tested', 'tested 已兼容读取，请迁移为 verification_status'));
+  }
+  if (!reviewStatus) diagnostics.push(issue('warning', 'review-status-missing', 'review_status 缺失'));
+  else if (!VALID_CHECK_STATUS.has(reviewStatus)) diagnostics.push(issue('error', 'review-status-invalid', `review_status 非法: ${reviewStatus}`));
+  if (!verificationStatus) diagnostics.push(issue('warning', 'verification-status-missing', 'verification_status 缺失'));
+  else if (!VALID_CHECK_STATUS.has(verificationStatus)) diagnostics.push(issue('error', 'verification-status-invalid', `verification_status 非法: ${verificationStatus}`));
+
   if (stage === 'done') {
-    if (!reviewed) issues.push('stage=done 但 reviewed=false');
-    if (!tested) issues.push('stage=done 但 tested=false');
-    if (git === 'dirty') issues.push('stage=done 但 git 工作区 dirty');
+    if (verificationStatus !== 'passed') diagnostics.push(issue('error', 'done-not-verified', 'done 要求 verification_status=passed'));
+    if (!['passed', 'not-applicable'].includes(reviewStatus)) diagnostics.push(issue('error', 'done-not-reviewed', 'done 要求 review_status=passed 或 not-applicable'));
   }
 
-  // paused 检查
-  if (stage === 'paused') {
-    // paused 不强制 last_updated 新鲜，但应记录原因（如果有 reason 字段更好）
-    if (!lastUpdated) {
-      issues.push('paused 项目缺少 last_updated（建议补 paused 日期）');
-    }
+  const git = getGitState(entry.path);
+  if (stage === 'done' && kind === 'code' && git === 'dirty') {
+    diagnostics.push(issue('warning', 'done-git-dirty', '已完成的代码项目仍有未提交变化'));
   }
 
-  // 统计
-  if (issues.length) issueCount++;
-  if (stage === 'idea') countIdea++;
-  else if (stage === 'in-progress') countInProgress++;
-  else if (stage === 'review') countReview++;
-  else if (stage === 'done') countDone++;
-  else if (stage === 'paused') countPaused++;
-  else countUnknown++;
-
-  const jsonItem = {
-    name,
-    stage,
-    progress,
-    last_updated: lastUpdated,
-    reviewed: reviewedRaw,
-    tested: testedRaw,
-    git,
-    issues
+  diagnostics.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.code.localeCompare(b.code));
+  return {
+    name: values.project || entry.configured_name || basename(entry.path), path: entry.path,
+    relative_path: relative(workspaceRoot, entry.path) || '.', source: entry.source,
+    kind, stage, health, priority, progress, last_updated: values.last_updated || '',
+    next_review: values.next_review || '', next_action: values.next_action || '',
+    blocked_by: values.blocked_by || '', paused_reason: values.paused_reason || '',
+    review_status: reviewStatus, verification_status: verificationStatus, git, issues: diagnostics
   };
-  jsonItems.push(jsonItem);
-
-  // 文本行（限定宽度，避免错位）
-  const issueMark = issues.length ? '!!' : '  ';
-  const stageCell = (stage || '?').padEnd(12);
-  const progressCell = (progress || '?').padStart(3);
-  const reviewedCell = (reviewed ? 'true' : '?').padStart(7);
-  const testedCell = (tested ? 'true' : '?').padEnd(6);
-  const gitCell = git.padEnd(8);
-  const updatedCell = lastUpdated || '?';
-  textRows.push({ mark: issueMark, name: name.padEnd(24), stage: stageCell, progress: progressCell, reviewed: reviewedCell, tested: testedCell, git: gitCell, updated: updatedCell, issues });
 }
 
-// ---------- 输出 ----------
+function summarize(projects, configIssues) {
+  const byStage = Object.fromEntries(STAGE_ORDER.map(stage => [stage, 0]));
+  const byHealth = { green: 0, yellow: 0, red: 0, unknown: 0 };
+  const diagnostics = { error: 0, warning: 0, info: 0 };
+  for (const project of projects) {
+    byStage[project.stage] = (byStage[project.stage] || 0) + 1;
+    byHealth[project.health] = (byHealth[project.health] || 0) + 1;
+    for (const item of project.issues) diagnostics[item.severity]++;
+  }
+  for (const item of configIssues) diagnostics[item.severity]++;
+  return {
+    total: projects.length,
+    projects_with_issues: projects.filter(project => project.issues.length).length,
+    by_stage: byStage,
+    by_health: byHealth,
+    diagnostics
+  };
+}
 
-if (outputJson) {
-  console.log(JSON.stringify(jsonItems));
-} else {
-  if (!issuesOnly) {
-    for (const r of textRows) {
-      console.log(`${r.mark} ${r.name} ${r.stage} progress=${r.progress} reviewed=${r.reviewed} tested=${r.tested} git=${r.git} updated=${r.updated}`);
-      for (const iss of r.issues) {
-        console.log(`     - ${iss}`);
-      }
+function compareProjects(a, b) {
+  return STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage)
+    || HEALTH_RANK[a.health] - HEALTH_RANK[b.health]
+    || Number(a.priority.slice(1)) - Number(b.priority.slice(1))
+    || a.name.localeCompare(b.name);
+}
+
+function printText(result, showIgnored) {
+  for (const configIssue of result.config_issues) {
+    console.log(`[${configIssue.severity.toUpperCase()}] config/${configIssue.code}: ${configIssue.message}`);
+  }
+  if (result.config_issues.length) console.log('');
+
+  let currentStage = '';
+  for (const project of result.projects) {
+    if (project.stage !== currentStage) {
+      currentStage = project.stage;
+      console.log(`## ${currentStage}`);
     }
-  } else {
-    for (const r of textRows) {
-      if (!r.issues.length) continue;
-      console.log(`${r.mark} ${r.name} ${r.stage} progress=${r.progress} reviewed=${r.reviewed} tested=${r.tested} git=${r.git} updated=${r.updated}`);
-      for (const iss of r.issues) {
-        console.log(`     - ${iss}`);
-      }
-    }
+    const progress = project.progress === '' ? '?' : `${project.progress}%`;
+    console.log(`${project.issues.length ? '!!' : '  '} ${project.name} [${project.priority}/${project.health}] progress=${progress} git=${project.git} updated=${project.last_updated || '?'}`);
+    if (project.next_action) console.log(`   next: ${project.next_action}`);
+    for (const item of project.issues) console.log(`   - [${item.severity}] ${item.code}: ${item.message}`);
   }
 
   console.log('');
-  console.log(`================ 汇总 (${workspaceRoot}) ================`);
-  console.log(`项目总数: ${total}    异常项目: ${issueCount}`);
-  console.log(`按阶段: 想法(idea)=${countIdea}  进行中(in-progress)=${countInProgress}  待审核(review)=${countReview}  已完成(done)=${countDone}  搁置(paused)=${countPaused}  未知(unknown)=${countUnknown}`);
-  console.log(`忽略: ${ignoredDirs.length} 个目录（hidden/默认/配置）` + (userIgnoreGlobs.length ? ` · 配置规则: ${userIgnoreGlobs.length} 条` : ' · 未读取到 .xiaoyi-wsman.config.json'));
-  console.log('(行首 \'!!\' 表示该项目存在需关注的异常)');
+  console.log(`================ 汇总 (${result.workspace}) ================`);
+  console.log(`项目: ${result.summary.total}  有诊断: ${result.summary.projects_with_issues}  error=${result.summary.diagnostics.error} warning=${result.summary.diagnostics.warning} info=${result.summary.diagnostics.info}`);
+  console.log(`阶段: ${Object.entries(result.summary.by_stage).filter(([, count]) => count).map(([stage, count]) => `${stage}=${count}`).join(' ') || '无项目'}`);
+  console.log(`健康度: red=${result.summary.by_health.red} yellow=${result.summary.by_health.yellow} green=${result.summary.by_health.green} unknown=${result.summary.by_health.unknown}`);
+  console.log(`忽略: ${result.ignored.length}`);
 
-  if (showIgnored && ignoredDirs.length) {
+  if (showIgnored && result.ignored.length) {
     console.log('');
-    console.log(`---------------- 忽略的目录 (${ignoredDirs.length}) ----------------`);
-    for (const ig of ignoredDirs) {
-      console.log(`  ${ig.name.padEnd(30)}  → ${ig.reason}  [${ig.rule}]`);
-    }
+    console.log('## 已忽略目录');
+    for (const item of result.ignored) console.log(`- ${item.name}: ${item.reason} (${item.rule})`);
   }
 }
+
+const options = parseArgs(argv.slice(2));
+if (!existsSync(options.workspaceRoot) || !statSync(options.workspaceRoot).isDirectory()) {
+  console.error(`workspace 根目录不存在: ${options.workspaceRoot}`);
+  exit(1);
+}
+
+const { config, configIssues, configPath } = normalizeConfig(options.workspaceRoot);
+const { projectEntries, ignored } = discoverProjects(options.workspaceRoot, config, configIssues);
+const allProjects = projectEntries.map(entry => scanProject(entry, config, options.workspaceRoot)).sort(compareProjects);
+const result = {
+  workspace: options.workspaceRoot,
+  config_path: configPath,
+  projects: options.issuesOnly ? allProjects.filter(project => project.issues.length) : allProjects,
+  summary: summarize(allProjects, configIssues),
+  ignored,
+  config_issues: configIssues
+};
+
+if (options.json) console.log(JSON.stringify(result, null, 2));
+else printText(result, options.showIgnored);

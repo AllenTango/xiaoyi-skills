@@ -1,41 +1,61 @@
 ---
 project: {{PROJECT_NAME}}
+kind: other
 stage: idea
-progress: 0
+health: unknown
+priority: P3
+progress:
 last_updated: {{TODAY}}
-reviewed: false
-tested: false
+next_review: {{TODAY}}
+next_action: "明确项目目标与完成标准"
+blocked_by: ""
+paused_reason: ""
+review_status: pending
+verification_status: pending
 ---
 
-# {{PROJECT_NAME}} — 状态
+# {{PROJECT_NAME}} - 状态
 
-> 本文件是该项目状态的**唯一信息源（single source of truth）**。
-> AI 每次在本项目完成实质性工作后，必须回写本文件。frontmatter 字段供 `xiaoyi-wsman-scan.js` 机读，请保持准确。
+> 本文件是项目状态的唯一事实源。只记录有依据的事实；计划、推断与待确认信息必须明确区分。
 
-## 当前阶段
+## 目标与完成标准
 
-<!-- stage 取值: idea(只是想法/方案) | in-progress(开发中) | review(开发完待审核测试) | done(完成且审核测试通过) | paused(搁置) -->
-当前为 **idea**。原因：尚处于构思阶段，仅有想法/方案，未开始编码。
+- 目标：待确认
+- 完成标准：待确认
+- 不在范围内：待确认
 
 ## 进度概览
 
-- 已完成：（无）
-- 进行中：（无）
-- 待办：明确需求、产出方案
+### 已验证事实
+
+- 已初始化项目状态文件。
+
+### 当前工作
+
+- 尚未开始。
+
+### 下一步
+
+- 明确项目目标与完成标准。
 
 ## 调整记录
 
-> 记录每一次"想法/方案的调整"以及它是否已落实，避免"调整了但忘了做"。
+| 日期 | 调整 / 决策 | 来源 | 落实状态 | 备注 |
+|------|-------------|------|----------|------|
+| {{TODAY}} | 初始化项目 | 用户/AI | 已落实 | 由 xiaoyi-wsman 纳管 |
 
-| 日期 | 调整 / 想法 | 落实状态 | 备注 |
-|------|------------|----------|------|
-| {{TODAY}} | 初始化项目 | 已落实 | 由 wsman 纳管 |
+## 阻塞与风险
 
-## 审核与测试
+- 阻塞：无
+- 风险：目标和完成标准尚未确认
 
-- 审核：未审核
-- 测试：未测试
+## 审核与验证
 
-## 待办 / 阻塞
+- 审核状态：pending
+- 验证状态：pending
+- 验证证据：无
 
-- [ ] 待补充
+## 待确认
+
+- [ ] 项目类型
+- [ ] 项目目标与完成标准

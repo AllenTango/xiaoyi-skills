@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaoyi Workspace Manager"
+  short_description: "统一管理代码与非代码项目的状态、优先级、阻塞风险和周期复盘"
+  default_prompt: "使用 $xiaoyi-wsman 扫描当前工作区，汇总项目状态、异常和下一步。"

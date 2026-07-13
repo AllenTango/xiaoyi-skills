@@ -1,21 +1,9 @@
 # xiaoyi-wsman
 
-Workspace 项目状态管理器。详见 SKILL.md。
+面向代码与非代码项目的 workspace 状态管理技能。项目事实保存在各项目的 `STATUS.md`，工作区通过 `.xiaoyi-wsman.json` 配置自动发现、显式项目和忽略规则。
 
-## Ignoring subdirectories
+主要工作流与完整配置见 [`SKILL.md`](./SKILL.md)。扫描器保持只读：
 
-The scanner auto-skips hidden directories and a built-in list (`node_modules`, `.git`, `.next`, `dist`, `build`, …). To skip additional directories, drop a `.xiaoyi-wsman.config.json` at the workspace root:
-
-```json
-{
-  "ignore": ["junk-*", "scripts/", "**/playground"]
-}
+```bash
+node scripts/xiaoyi-wsman-scan.js /path/to/workspace --show-ignored
 ```
-
-Use `--show-ignored` to verify what is being skipped and why.
-
-Pattern syntax (see SKILL.md for full details):
-- `*` matches any chars except `/`
-- `**` matches across segments
-- Trailing `/` or `/**` switches to prefix match
-- `?` matches a single character
